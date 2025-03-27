@@ -10,10 +10,19 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageSquare, Send, User } from "lucide-react";
 
 import Welcome from "../app/components/welcome";
+import NewChat from "./components/newchat";
 import styles from "../app/styles/homepage.module.css";
 
 export default function ChatbotPage() {
-  const { messages, input, handleInputChange, handleSubmit } = useChat();
+  const { messages, input, handleInputChange, handleSubmit, isLoading } =
+    useChat({
+      api: "/api/chat",
+      onError: (error) => {
+        console.error("Error in chat:", error);
+        // You could add a toast notification here
+      },
+    });
+
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
 
   const startNewChat = () => {
@@ -28,7 +37,13 @@ export default function ChatbotPage() {
     e.preventDefault();
     if (input.trim()) {
       startNewChat();
-      // handleSubmit triggers your chat logic from ai/react
+      handleSubmit(e);
+    }
+  };
+
+  const handleNewChatSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (input.trim()) {
       handleSubmit(e);
     }
   };
@@ -67,48 +82,15 @@ export default function ChatbotPage() {
       {/* Main chat area */}
       <div className={styles.mainArea}>
         {selectedChat ? (
-          <>
-            <header className={styles.header}>
-              <h1 className={styles.headerTitle}>{selectedChat}</h1>
-            </header>
-            <ScrollArea className={styles.messageArea}>
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`${styles.message} ${
-                    message.role === "user"
-                      ? styles.userMessage
-                      : styles.assistantMessage
-                  }`}
-                >
-                  <div
-                    className={`${styles.messageBubble} ${
-                      message.role === "user"
-                        ? styles.userMessageBubble
-                        : styles.assistantMessageBubble
-                    }`}
-                  >
-                    {message.content}
-                  </div>
-                </div>
-              ))}
-            </ScrollArea>
-            <div className={styles.inputArea}>
-              <form onSubmit={handleSubmit} className={styles.form}>
-                <Input
-                  value={input}
-                  onChange={handleInputChange}
-                  placeholder="Type your message..."
-                  className="flex-grow"
-                />
-                <Button type="submit">
-                  <Send className="h-4 w-4" />
-                </Button>
-              </form>
-            </div>
-          </>
+          <NewChat
+            messages={messages}
+            input={input}
+            onInputChange={handleInputChange}
+            onSubmit={handleNewChatSubmit}
+            chatTitle={selectedChat}
+            isLoading={isLoading}
+          />
         ) : (
-          // If no chat is selected, show the Welcome component
           <Welcome
             input={input}
             onInputChange={handleInputChange}

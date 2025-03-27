@@ -311,3 +311,76 @@
 .icon {
   margin-right: 0.5rem;
 }
+
+.chatContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.messageArea {
+  flex: 1;
+  position: relative;
+  height: calc(
+    100vh - 140px
+  ); /* Adjust based on your header and input heights */
+  overflow-y: auto;
+}
+
+.messagesWrapper {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  background-color: #1a1a1a;
+  padding: 1rem;
+  border-bottom: 1px solid #444;
+  z-index: 10;
+}
+
+.inputArea {
+  position: sticky;
+  bottom: 0;
+  background-color: #1a1a1a;
+  padding: 1rem;
+  border-top: 1px solid #444;
+  z-index: 10;
+}
+
+.loadingDots {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+}
+
+.loadingDots span {
+  animation: bounce 1.4s infinite ease-in-out;
+  display: block;
+  font-size: 20px;
+}
+
+.loadingDots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loadingDots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}
