@@ -1,0 +1,313 @@
+/* Ensure the container spans the full screen and arranges sidebar + main area */
+.container {
+  display: flex;
+  height: 100vh; /* Full viewport height */
+  background-color: #111; /* Or remove if you want .mainArea's gradient across entire background */
+}
+
+/* Sidebar stays on the left with a fixed width */
+.sidebar {
+  width: 16rem;
+  background: linear-gradient(to bottom, #111, #222);
+  color: #fff;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #444;
+}
+
+/* The rest of your sidebar classes remain the same */
+.sidebarTitle {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  cursor: pointer;
+}
+.chatList {
+  flex-grow: 1;
+}
+.userInfo {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid #333;
+}
+
+/* Main area takes up remaining space and shows gradient */
+.mainArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(to bottom right, #111, #222);
+}
+
+/* Optional header for chat title */
+.header {
+  background-color: #1a1a1a;
+  padding: 1rem;
+  border-bottom: 1px solid #444;
+}
+.headerTitle {
+  font-size: 1.25rem;
+  font-weight: bold;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* The scrollable chat messages area */
+.messageArea {
+  flex: 1;
+  padding: 1rem;
+}
+.message {
+  margin-bottom: 1rem;
+}
+.userMessage {
+  text-align: right;
+}
+.assistantMessage {
+  text-align: left;
+}
+.messageBubble {
+  display: inline-block;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+}
+.userMessageBubble {
+  background: linear-gradient(to right, #ffd700, #ffcc00);
+  color: #111;
+}
+.assistantMessageBubble {
+  background: rgba(138, 43, 226, 0.1);
+  color: #fff;
+}
+
+/* Input area for new messages */
+.inputArea {
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border-top: 1px solid #444;
+}
+.form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ---- WELCOME SCREEN CLASSES ---- */
+.welcomeContainer {
+  /* Remove the full-screen background if you want .mainArea's gradient to show. */
+  /* background: linear-gradient(to bottom right, #111, #222);  <-- remove this */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 2rem;
+  flex: 1; /* let it expand to fill .mainArea's available space */
+}
+
+/* Adjust as needed */
+.welcomeTitle {
+  font-size: 2.5rem;
+  font-weight: bold;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1rem;
+}
+.welcomeSubtitle {
+  font-size: 1.5rem;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 2rem;
+}
+.welcomeInput {
+  width: 100%;
+  max-width: 500px;
+}
+.input {
+  flex-grow: 1;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid #ccc;
+  outline: none;
+}
+.button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  border: none;
+  background-color: #8a2be2;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.icon {
+  margin-right: 0.5rem;
+}
+
+.container {
+  display: flex;
+  height: 100vh;
+  background-color: #111;
+}
+
+.sidebar {
+  width: 16rem;
+  background: linear-gradient(to bottom, #111, #222);
+  color: #fff;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #444;
+}
+
+.sidebarTitle {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 1rem;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  cursor: pointer;
+}
+
+.chatList {
+  flex-grow: 1;
+}
+
+.userInfo {
+  margin-top: auto;
+  padding-top: 1rem;
+  border-top: 1px solid #333;
+}
+
+.mainArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(to bottom right, #111, #222);
+}
+
+.header {
+  background-color: #1a1a1a;
+  padding: 1rem;
+  border-bottom: 1px solid #444;
+}
+
+.headerTitle {
+  font-size: 1.25rem;
+  font-weight: bold;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.messageArea {
+  flex: 1;
+  padding: 1rem;
+}
+
+.message {
+  margin-bottom: 1rem;
+}
+
+.userMessage {
+  text-align: right;
+}
+
+.assistantMessage {
+  text-align: left;
+}
+
+.messageBubble {
+  display: inline-block;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.userMessageBubble {
+  background: linear-gradient(to right, #ffd700, #ffcc00);
+  color: #111;
+}
+
+.assistantMessageBubble {
+  background: rgba(138, 43, 226, 0.1);
+  color: #fff;
+}
+
+.inputArea {
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border-top: 1px solid #444;
+}
+
+.form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.welcomeContainer {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  text-align: center;
+  padding: 2rem;
+  background: linear-gradient(to bottom right, #111, #222);
+}
+
+.welcomeTitle {
+  font-size: 2.5rem;
+  font-weight: bold;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 1rem;
+}
+
+.welcomeSubtitle {
+  font-size: 1.5rem;
+  background: linear-gradient(to right, #8a2be2, #4169e1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 2rem;
+}
+
+.welcomeInput {
+  width: 100%;
+  max-width: 500px;
+}
+
+.form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.input {
+  flex-grow: 1;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid #ccc;
+  outline: none;
+}
+
+.button {
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  border: none;
+  background-color: #8a2be2;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.icon {
+  margin-right: 0.5rem;
+}
