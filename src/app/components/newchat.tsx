@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 
 interface Message {
   id: string | number;
-  role: "user" | "assistant" | "system" | "data";
+  role: "user" | "assistant";
   content: string;
 }
 

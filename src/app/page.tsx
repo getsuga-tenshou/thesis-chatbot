@@ -1,29 +1,116 @@
 "use client";
 
 import { useState } from "react";
-import { useChat } from "ai/react";
-// (UI imports from your own library or Shadcn UI)
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Send, User } from "lucide-react";
+import { MessageSquare, User } from "lucide-react";
 
 import Welcome from "../app/components/welcome";
 import NewChat from "./components/newchat";
 import styles from "../app/styles/homepage.module.css";
 
-export default function ChatbotPage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading } =
-    useChat({
-      api: "/api/chat",
-      onError: (error) => {
-        console.error("Error in chat:", error);
-        // To be added here later...
-      },
-    });
+interface Message {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+}
 
+export default function ChatbotPage() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: input,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to fetch response");
+
+      const data = await response.json();
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.content,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleWelcomeSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    setSelectedChat("New Chat");
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: input,
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [userMessage],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch response");
+      }
+
+      const data = await response.json();
+
+      const assistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: data.content,
+      };
+
+      setMessages((prev) => [...prev, assistantMessage]);
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const startNewChat = () => {
     setSelectedChat("New Chat");
@@ -31,21 +118,6 @@ export default function ChatbotPage() {
 
   const goToHome = () => {
     setSelectedChat(null);
-  };
-
-  const handleWelcomeSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (input.trim()) {
-      startNewChat();
-      handleSubmit(e);
-    }
-  };
-
-  const handleNewChatSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (input.trim()) {
-      handleSubmit(e);
-    }
   };
 
   return (
@@ -84,15 +156,15 @@ export default function ChatbotPage() {
           <NewChat
             messages={messages}
             input={input}
-            onInputChange={handleInputChange}
-            onSubmit={handleNewChatSubmit}
+            onInputChange={(e) => setInput(e.target.value)}
+            onSubmit={handleSubmit}
             chatTitle={selectedChat}
             isLoading={isLoading}
           />
         ) : (
           <Welcome
             input={input}
-            onInputChange={handleInputChange}
+            onInputChange={(e) => setInput(e.target.value)}
             onSubmit={handleWelcomeSubmit}
           />
         )}

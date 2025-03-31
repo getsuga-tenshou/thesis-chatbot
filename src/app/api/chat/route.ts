@@ -1,71 +1,58 @@
+import { InferenceClient } from "@huggingface/inference";
 import { NextResponse } from "next/server";
-import { HfInference } from "@huggingface/inference";
 
 export const runtime = "edge";
 
-const HF_API_TOKEN = process.env.HUGGING_FACE_API_KEY;
+const API_KEY = process.env.HUGGING_FACE_API_KEY;
 
-// Initialize the inference client
-const inference = new HfInference(HF_API_TOKEN);
+if (!API_KEY) {
+  throw new Error("HUGGINGFACE_API_KEY is not set in environment variables");
+}
+
+if (!API_KEY.startsWith("hf_")) {
+  throw new Error("HUGGINGFACE_API_KEY should start with 'hf_'");
+}
+
+const client = new InferenceClient(API_KEY);
 
 export async function POST(req: Request) {
   try {
-    if (!HF_API_TOKEN) {
+    const { messages } = await req.json();
+
+    if (!messages?.length) {
       return NextResponse.json(
-        { error: "API key not configured" },
-        { status: 500 }
+        { error: "No messages provided" },
+        { status: 400 }
       );
     }
 
-    const { messages } = await req.json();
     const lastMessage = messages[messages.length - 1];
+    console.log("Processing message:", lastMessage.content);
 
-    // Generate text using the inference client
-    const result = await inference.textGeneration({
+    const response = await client.textGeneration({
       model: "google/flan-t5-large",
       inputs: lastMessage.content,
       parameters: {
-        max_length: 100,
+        max_new_tokens: 250,
         temperature: 0.7,
       },
     });
 
-    // Create a stream of the response
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        // Format message as per Vercel AI SDK requirements
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({
-              id: Date.now().toString(),
-              role: "assistant",
-              content: result.generated_text,
-            })}\n\n`
-          )
-        );
-        // Signal the end of the stream
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-        controller.close();
-      },
+    if (!response.generated_text) {
+      throw new Error("No response generated from the model");
+    }
+
+    return NextResponse.json({ content: response.generated_text });
+  } catch (error: any) {
+    console.error("API Error:", {
+      message: error.message,
+      status: error.status,
+      response: error.response?.data,
     });
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      },
-    });
-  } catch (error) {
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to get response from the model",
-      },
-      { status: 500 }
+      { error: "Failed to generate response - " + error.message },
+      { status: error.status || 500 }
     );
   }
 }

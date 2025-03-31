@@ -1,5 +1,5 @@
 import React from "react";
-import { FiSend } from "react-icons/fi"; // using an icon from react-icons
+import { FiSend } from "react-icons/fi";
 import styles from "../styles/homepage.module.css";
 
 interface WelcomeProps {
@@ -24,10 +24,10 @@ function Welcome({ input, onInputChange, onSubmit }: WelcomeProps) {
           value={input}
           onChange={onInputChange}
           placeholder="Start typing your question here..."
-          className={styles.input} // styling is applied via CSS module
+          className={styles.input}
         />
         <button type="submit" className={styles.button}>
-          <FiSend className={styles.icon} /> {/* Icon styled via CSS */}
+          <FiSend className={styles.icon} /> {}
           Send
         </button>
       </form>

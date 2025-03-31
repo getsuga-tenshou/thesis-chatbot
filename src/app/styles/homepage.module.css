@@ -1,11 +1,9 @@
-/* Ensure the container spans the full screen and arranges sidebar + main area */
 .container {
   display: flex;
-  height: 100vh; /* Full viewport height */
-  background-color: #111; /* Or remove if you want .mainArea's gradient across entire background */
+  height: 100vh;
+  background-color: #111;
 }
 
-/* Sidebar stays on the left with a fixed width */
 .sidebar {
   width: 16rem;
   background: linear-gradient(to bottom, #111, #222);
@@ -16,7 +14,6 @@
   border-right: 1px solid #444;
 }
 
-/* The rest of your sidebar classes remain the same */
 .sidebarTitle {
   font-size: 1.5rem;
   font-weight: bold;
@@ -35,7 +32,6 @@
   border-top: 1px solid #333;
 }
 
-/* Main area takes up remaining space and shows gradient */
 .mainArea {
   flex: 1;
   display: flex;
@@ -43,7 +39,6 @@
   background: linear-gradient(to bottom right, #111, #222);
 }
 
-/* Optional header for chat title */
 .header {
   background-color: #1a1a1a;
   padding: 1rem;
@@ -57,7 +52,6 @@
   -webkit-text-fill-color: transparent;
 }
 
-/* The scrollable chat messages area */
 .messageArea {
   flex: 1;
   padding: 1rem;
@@ -85,7 +79,6 @@
   color: #fff;
 }
 
-/* Input area for new messages */
 .inputArea {
   padding: 1rem;
   background-color: #1a1a1a;
@@ -96,20 +89,16 @@
   gap: 0.5rem;
 }
 
-/* ---- WELCOME SCREEN CLASSES ---- */
 .welcomeContainer {
-  /* Remove the full-screen background if you want .mainArea's gradient to show. */
-  /* background: linear-gradient(to bottom right, #111, #222);  <-- remove this */
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   text-align: center;
   padding: 2rem;
-  flex: 1; /* let it expand to fill .mainArea's available space */
+  flex: 1;
 }
 
-/* Adjust as needed */
 .welcomeTitle {
   font-size: 2.5rem;
   font-weight: bold;
@@ -322,9 +311,7 @@
 .messageArea {
   flex: 1;
   position: relative;
-  height: calc(
-    100vh - 140px
-  ); /* Adjust based on your header and input heights */
+  height: calc(100vh - 140px);
   overflow-y: auto;
 }
 
