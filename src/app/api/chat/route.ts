@@ -1,7 +1,8 @@
 import { InferenceClient } from "@huggingface/inference";
 import { NextResponse } from "next/server";
-
-export const runtime = "edge";
+import connectDB from "@/lib/mongodb";
+import { Message } from "@/models/message";
+import { Conversation } from "@/models/conversation";
 
 const API_KEY = process.env.HUGGING_FACE_API_KEY;
 
@@ -13,22 +14,36 @@ if (!API_KEY.startsWith("hf_")) {
   throw new Error("HUGGINGFACE_API_KEY should start with 'hf_'");
 }
 
-const client = new InferenceClient(API_KEY);
-
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    await connectDB();
 
-    if (!messages?.length) {
-      return NextResponse.json(
-        { error: "No messages provided" },
-        { status: 400 }
-      );
+    const { messages, conversationId } = await req.json();
+    const lastMessage = messages[messages.length - 1];
+
+    let conversation;
+    if (conversationId) {
+      conversation = await Conversation.findById(conversationId);
+      if (!conversation) {
+        throw new Error("Conversation not found");
+      }
+    } else {
+      conversation = await Conversation.create({
+        title: lastMessage.content.slice(0, 30) + "...",
+      });
     }
 
-    const lastMessage = messages[messages.length - 1];
-    console.log("Processing message:", lastMessage.content);
+    const userMessage = await Message.create({
+      role: "user",
+      content: lastMessage.content,
+      conversationId: conversation._id,
+    });
 
+    conversation.messages.push(userMessage._id);
+    conversation.lastUpdated = new Date();
+    await conversation.save();
+
+    const client = new InferenceClient(API_KEY);
     const response = await client.textGeneration({
       model: "google/flan-t5-large",
       inputs: lastMessage.content,
@@ -38,21 +53,24 @@ export async function POST(req: Request) {
       },
     });
 
-    if (!response.generated_text) {
-      throw new Error("No response generated from the model");
-    }
-
-    return NextResponse.json({ content: response.generated_text });
-  } catch (error: any) {
-    console.error("API Error:", {
-      message: error.message,
-      status: error.status,
-      response: error.response?.data,
+    const assistantMessage = await Message.create({
+      role: "assistant",
+      content: response.generated_text,
+      conversationId: conversation._id,
     });
 
+    conversation.messages.push(assistantMessage._id);
+    await conversation.save();
+
+    return NextResponse.json({
+      content: response.generated_text,
+      conversationId: conversation._id,
+    });
+  } catch (error: any) {
+    console.error("API Error:", error);
     return NextResponse.json(
-      { error: "Failed to generate response - " + error.message },
-      { status: error.status || 500 }
+      { error: error.message || "Failed to process request" },
+      { status: 500 }
     );
   }
 }
