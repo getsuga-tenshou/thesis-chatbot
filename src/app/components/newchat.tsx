@@ -48,12 +48,23 @@ export default function NewChat({
   };
 
   return (
-    <div className={styles.chatContainer}>
+    <div
+      className={styles.chatContainer}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        width: "100%",
+      }}
+    >
       <header className={styles.header}>
         <h1 className={styles.headerTitle}>{chatTitle}</h1>
       </header>
 
-      <ScrollArea className={styles.messageArea}>
+      <ScrollArea
+        className={styles.messageArea}
+        style={{ flex: 1, height: "calc(100vh - 140px)", position: "relative" }}
+      >
         <div className={styles.messagesWrapper}>
           {messages.map((message) => (
             <div
@@ -92,16 +103,46 @@ export default function NewChat({
         </div>
       </ScrollArea>
 
-      <div className={styles.inputArea}>
-        <form onSubmit={handleSubmit} className={styles.form}>
+      <div
+        className={styles.inputArea}
+        style={{
+          position: "sticky",
+          bottom: 0,
+          backgroundColor: "#1a1a1a",
+          padding: "1rem",
+          borderTop: "1px solid #444",
+        }}
+      >
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: "flex", gap: "0.5rem" }}
+        >
           <Input
             value={input}
             onChange={handleInputChange}
             placeholder="Type your message..."
             className="flex-grow"
+            style={{
+              backgroundColor: "#222",
+              color: "#fff",
+              padding: "0.5rem",
+              border: "1px solid #444",
+            }}
             disabled={isLoading}
           />
-          <Button type="submit" disabled={isLoading}>
+          <Button
+            type="submit"
+            disabled={isLoading}
+            style={{
+              backgroundColor: "#8a2be2",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "40px",
+              height: "40px",
+              padding: "0",
+            }}
+          >
             <Send className="h-4 w-4" />
           </Button>
         </form>
