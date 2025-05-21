@@ -1,0 +1,20 @@
+[
+  {
+    "id": "47de7533-74ad-4246-9bec-b754bc8422f1",
+    "role": "user",
+    "content": "hey, this is a test message.",
+    "timestamp": "2025-05-21T05:55:25.813059",
+    "session_id": "7b7ec052-ecc5-4bc5-a863-bf4544d6e3b6",
+    "username": "chandan",
+    "thread_id": "51621705-fdf6-4b09-b453-c61b156486d9"
+  },
+  {
+    "id": "cf93892b-0fa6-4c8d-a08b-76d648d09b95",
+    "role": "assistant",
+    "content": "Thank you for sharing your thoughts. To better understand your perspective, could you elaborate on what specific ethical dilemma or scenario you are considering? What are the key elements that make this situation complex for you?",
+    "timestamp": "2025-05-21T05:55:31.169928",
+    "session_id": "7b7ec052-ecc5-4bc5-a863-bf4544d6e3b6",
+    "username": "chandan",
+    "thread_id": "51621705-fdf6-4b09-b453-c61b156486d9"
+  }
+]

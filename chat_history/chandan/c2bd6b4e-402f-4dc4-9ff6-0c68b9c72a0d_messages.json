@@ -1,0 +1,32 @@
+[
+  {
+    "role": "user",
+    "content": "Hey, explain deontology\\",
+    "timestamp": "2025-05-21T05:56:07.022000",
+    "thread_id": "317eb5ca-f6e3-426c-a85c-50d60f653f5d"
+  },
+  {
+    "role": "assistant",
+    "content": "Thank you for sharing your thoughts. Let's delve into this together. \n\nYou mentioned {insert user\u2019s latest message or question here}. What specific aspects of this scenario intrigue you the most? Are there particular values or principles that you feel are at stake here? \n\nAs we explore this, how do you think different ethical frameworks, like utilitarianism or deontology, might approach this situation? What would a focus on the consequences of actions versus the intentions behind them reveal about the ethical considerations involved? \n\nI\u2019m curious about how you personally relate to this issue. What beliefs or experiences shape your view on this matter?",
+    "timestamp": "2025-05-21T05:56:10.865000",
+    "thread_id": "317eb5ca-f6e3-426c-a85c-50d60f653f5d"
+  },
+  {
+    "id": "a0e771ac-9419-4271-a9e6-7af0fdb53c48",
+    "role": "user",
+    "content": "testing the new chat instance",
+    "timestamp": "2025-05-21T06:08:37.756362",
+    "session_id": "6854a234-893b-42d7-8585-2888395e1472",
+    "username": "chandan",
+    "thread_id": "26de703f-ea53-48f1-8958-5ef6ef821c7e"
+  },
+  {
+    "id": "741d975f-5398-4543-b0fc-cdf0637ae44f",
+    "role": "assistant",
+    "content": "It seems like you're testing the chat. While we're doing that, I'm curious\u2014what interests you about ethical theories like deontology? Are there specific aspects you're wondering about, or perhaps a particular scenario where you think deontological principles might apply?",
+    "timestamp": "2025-05-21T06:08:40.174548",
+    "session_id": "6854a234-893b-42d7-8585-2888395e1472",
+    "username": "chandan",
+    "thread_id": "26de703f-ea53-48f1-8958-5ef6ef821c7e"
+  }
+]

@@ -1,0 +1,20 @@
+[
+  {
+    "id": "fb2ae982-378c-46bb-9c53-863c4585cbbf",
+    "role": "user",
+    "content": "Hello, I'd like to discuss the trolley problem.",
+    "timestamp": "2025-05-18T10:05:34.447173",
+    "session_id": "9cde5922-041d-4afb-88ee-243be9e85f29",
+    "username": "test_user",
+    "thread_id": "3625c178-c9de-4347-be75-941720651c21"
+  },
+  {
+    "id": "5a399501-5baa-4279-9375-96a4e77e140d",
+    "role": "assistant",
+    "content": "I'd be happy to discuss the trolley problem. What aspects of this ethical dilemma interest you?",
+    "timestamp": "2025-05-18T10:05:34.448286",
+    "session_id": "9cde5922-041d-4afb-88ee-243be9e85f29",
+    "username": "test_user",
+    "thread_id": "3625c178-c9de-4347-be75-941720651c21"
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "thread_id": "c79f78eb-e87e-4c57-acca-06b3febac1ee",
+  "username": "test_user",
+  "thread_name": "Default Thread",
+  "created_at": "2025-05-18T10:05:34.474284",
+  "session_ids": [
+    "77a2936f-371a-4f2a-95c9-d2e4fa72daff"
+  ],
+  "summary": "",
+  "active_session_id": "77a2936f-371a-4f2a-95c9-d2e4fa72daff",
+  "updated_at": "2025-05-18T10:05:34.485705"
+}
