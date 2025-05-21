@@ -1,3 +1,4 @@
 ./.streamlit 
 ./chat_history
 ./db
+./.env

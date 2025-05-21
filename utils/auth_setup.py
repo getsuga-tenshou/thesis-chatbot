@@ -13,37 +13,31 @@ from datetime import datetime
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import DuplicateKeyError
 
-# Configure logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("auth_setup")
 
-# Load environment variables
 load_dotenv()
 
-# Constants
 USERNAME = "username"
 PASSWORD = "password"
 NAME = "name"
 SU = "su"
 BLANK = ""
 
-# Setup database directory (for SQLite)
 db_path = os.getenv('SQLITE_DB_PATH', './db')
 db_name = os.getenv('SQLITE_DB', 'auth.db')
 os.makedirs(db_path, exist_ok=True)
 db_file = os.path.join(db_path, db_name)
 
-# MongoDB setup
 MONGO_DB_URI = os.getenv('MONGO_DB_URI')
 MONGODB_DATABASE_NAME = os.getenv('MONGODB_DATABASE_NAME', 'Chatbot')
 MONGODB_USERS_COLLECTION = os.getenv('MONGODB_USERS_COLLECTION', 'userData')
 MONGODB_CONVERSATIONS_COLLECTION = os.getenv('MONGODB_CONVERSATIONS_COLLECTION', 'chatHistory')
 threads_collection = None
 
-# Determine storage mode - will use MongoDB if available, otherwise SQLite
 USE_MONGODB = bool(MONGO_DB_URI)
 
-# MongoDB client
 mongo_client = None
 db = None
 users_collection = None
@@ -60,17 +54,14 @@ def init_mongodb():
     
     try:
         mongo_client = MongoClient(MONGO_DB_URI)
-        # Ping to confirm connection
         mongo_client.admin.command('ping')
         logger.info("Connected to MongoDB successfully!")
         
-        # Set up database and collections
         db = mongo_client[MONGODB_DATABASE_NAME]
         users_collection = db[MONGODB_USERS_COLLECTION]
         conversations_collection = db[MONGODB_CONVERSATIONS_COLLECTION]
         threads_collection = db['threads']
         
-        # Create indexes
         users_collection.create_index([("username", ASCENDING)], unique=True)
         conversations_collection.create_index([("session_id", ASCENDING)])
         conversations_collection.create_index([("username", ASCENDING)])
@@ -84,7 +75,6 @@ def init_mongodb():
         logger.error(f"Failed to connect to MongoDB: {e}")
         return False
 
-# Encryption helpers
 class AES256CBC:
     def __init__(self, key, nonce):
         self.key = hashlib.sha256(key.encode()).digest()
@@ -113,7 +103,6 @@ class AES256CBC:
             logger.error(f"Decryption error: {e}")
             return None
 
-# Safe Cookie Manager
 class SafeCookieManager:
     def __init__(self):
         self._cookie_manager = None
@@ -166,15 +155,12 @@ class SafeCookieManager:
             return False
             
         try:
-            # First check if we know about this cookie
             if cookie_name in self._cookies:
                 del self._cookies[cookie_name]
                 
-            # Now try to delete from the actual cookie manager
             try:
                 self.cookie_manager.delete(cookie_name)
             except KeyError:
-                # Cookie doesn't exist, which is fine
                 pass
             except Exception as e:
                 logger.error(f"Error deleting cookie '{cookie_name}': {e}")
@@ -197,11 +183,9 @@ class SafeCookieManager:
             logger.error(f"Error getting all cookies: {e}")
             return {}
 
-# Get safe cookie manager
 def get_cookie_manager():
     return SafeCookieManager()
 
-# MongoDB User Operations
 def mongodb_get_user(username):
     """Get a user from MongoDB by username"""
     if users_collection is None:
@@ -290,7 +274,6 @@ def mongodb_update_login(username):
         logger.error(f"Error updating login info in MongoDB: {e}")
         return None
 
-# Legacy SQLite Database functions
 def init_db():
     conn = sqlite3.connect(db_file)
     cursor = conn.cursor()
@@ -313,7 +296,6 @@ def get_user(username):
         if user:
             return (user["username"], user["password"], user["su"])
     
-    # Fallback to SQLite
     try:
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
@@ -333,9 +315,7 @@ def create_user(username, password, is_su=0, name=""):
     if USE_MONGODB:
         return mongodb_create_user(username, password, name, is_su)
     
-    # Fallback to SQLite
     try:
-        # Encrypt password
         enc_password = os.getenv('ENC_PASSWORD', 'YouWillNeverGuessThisSecretKey32')
         enc_nonce = os.getenv('ENC_NONCE', 'nonsensical')
         encrypted_password = AES256CBC(enc_password, enc_nonce).encrypt(password)
@@ -367,7 +347,6 @@ def get_all_users():
         if mongo_users:
             return [(user["username"], user["password"], user["su"]) for user in mongo_users]
     
-    # Fallback to SQLite
     try:
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
@@ -385,7 +364,6 @@ def delete_user(username):
         if mongodb_delete_user(username):
             return True
     
-    # Fallback to SQLite
     try:
         conn = sqlite3.connect(db_file)
         cursor = conn.cursor()
@@ -397,7 +375,6 @@ def delete_user(username):
         logger.error(f"Error deleting user '{username}': {e}")
         return False
 
-# Authentication
 def login(username, password):
     user = get_user(username)
     if not user:
@@ -406,7 +383,6 @@ def login(username, password):
     try:
         stored_username, stored_password, is_su = user
         
-        # Decrypt password
         enc_password = os.getenv('ENC_PASSWORD', 'YouWillNeverGuessThisSecretKey32')
         enc_nonce = os.getenv('ENC_NONCE', 'nonsensical')
         decrypted_password = AES256CBC(enc_password, enc_nonce).decrypt(stored_password)
@@ -416,7 +392,6 @@ def login(username, password):
             return None
             
         if password == decrypted_password:
-            # Update last login in MongoDB if using it
             if USE_MONGODB:
                 mongodb_update_login(username)
                 
@@ -427,15 +402,12 @@ def login(username, password):
         return None
 
 def handle_auth_cookie():
-    # Initialize the cookie manager
     cookie_manager = get_cookie_manager()
     cookie_name = os.getenv('COOKIE_NAME', 'ethosbot-auth')
     
-    # Initialize session state for user if not already set
     if 'user' not in st.session_state:
         st.session_state.user = None
     
-    # Check if user is already logged in via cookie
     if st.session_state.user is None:
         stored_cookie = cookie_manager.get(cookie_name)
         if stored_cookie:
@@ -447,19 +419,16 @@ def handle_auth_cookie():
                     'su': user[2]
                 }
     
-    # Handle remember_me setting if user is authenticated
+    
     if st.session_state.user:
         if st.session_state.get('remember_me', False):
-            # Set or refresh cookie
             cookie_manager.set(
                 cookie_name, 
                 {"username": st.session_state.user["username"], "password": st.session_state.user["password"]}
             )
         else:
-            # Delete cookie if remember_me is False
             cookie_manager.delete(cookie_name)
 
-# Admin functions
 def admin_panel():
     if not st.session_state.user or st.session_state.user['su'] != 1:
         st.error("You need to be a super user to access this panel")
@@ -467,7 +436,6 @@ def admin_panel():
     
     st.title("Admin Panel")
     
-    # View Users
     st.subheader("All Users")
     users = get_all_users()
     user_data = []
@@ -475,7 +443,6 @@ def admin_panel():
         user_data.append({"Username": user[0], "Is Admin": "Yes" if user[2] == 1 else "No"})
     st.table(user_data)
     
-    # Create User
     st.subheader("Create User")
     new_username = st.text_input("New Username")
     new_password = st.text_input("New Password", type="password")
@@ -489,7 +456,6 @@ def admin_panel():
         else:
             st.error("Failed to create user. Username may already exist.")
     
-    # Delete User
     st.subheader("Delete User")
     users = get_all_users()
     usernames = [user[0] for user in users]
@@ -500,30 +466,23 @@ def admin_panel():
         st.success(f"User {username_to_delete} deleted successfully!")
         st.rerun()
 
-# Initialize auth system
 def setup_auth():
-    # Try to initialize MongoDB first
     global USE_MONGODB
     USE_MONGODB = init_mongodb()
     
-    # Always initialize SQLite as fallback
     init_db()
     
-    # Create admin user if it doesn't exist (in either MongoDB or SQLite)
     admin = get_user("admin")
     if not admin:
         create_user("admin", "admin", 1, "Administrator")
         st.success("Created default admin user (username: admin, password: admin)")
         st.warning("Please change the default admin password!")
     
-    # Handle authentication via cookies
     handle_auth_cookie()
 
-# Check if user is authenticated
 def is_authenticated():
     return st.session_state.user is not None
 
-# Function decorator to require authentication
 def requires_auth(func):
     def wrapper(*args, **kwargs):
         if is_authenticated():

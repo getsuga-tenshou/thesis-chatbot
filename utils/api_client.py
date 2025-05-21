@@ -5,11 +5,8 @@ import uuid
 
 from dotenv import load_dotenv
 
-# Configure logging
 logger = logging.getLogger("api_client")
 logger.setLevel(logging.INFO)
-
-# Import MongoDB and OpenAI libraries
 try:
     from pymongo import MongoClient
     from pymongo.server_api import ServerApi
@@ -36,12 +33,10 @@ class LangchainMongoDBClient:
         self._init_client(system_prompt)
 
     def _init_client(self, system_prompt: Optional[str] = None):
-        # Initialize OpenAI API key
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY not set in .env file.")
 
-        # Initialize MongoDB connection
         self.mongo_db_uri = os.getenv("MONGO_DB_URI")
         self.mongodb_database_name = os.getenv("MONGODB_DATABASE_NAME", "Chatbot")
         self.mongodb_collection_name = os.getenv("MONGODB_COLLECTION_NAME", "Embeddings")
@@ -49,32 +44,24 @@ class LangchainMongoDBClient:
         if not self.mongo_db_uri:
             raise ValueError("MONGO_DB_URI not set in .env file.")
 
-        # Set model names
         self.llm_model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini-2024-07-18")
         self.embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
 
-        # Initialize MongoDB client
         self.mongo_client = MongoClient(self.mongo_db_uri)
-        # Ping to confirm connection
         self.mongo_client.admin.command('ping')
         logger.info("Connected to MongoDB Atlas successfully!")
         
-        # Set up database and collection
         self.db = self.mongo_client[self.mongodb_database_name]
         self.collection = self.db[self.mongodb_collection_name]
         
-        # Create vector search index if it doesn't exist
         try:
-            # Check if collection has documents
             if self.collection.count_documents({}) == 0:
                 logger.info(f"Collection {self.mongodb_collection_name} is empty")
                 
-            # Check if collection has a vector search index
             indexes = list(self.collection.list_indexes())
             vector_index_exists = any("vector" in idx.get("name", "") for idx in indexes)
             
             if not vector_index_exists:
-                # Create vector search index
                 try:
                     index_definition = {
                         "mappings": {
@@ -100,20 +87,17 @@ class LangchainMongoDBClient:
         except Exception as e:
             logger.error(f"Error checking vector index: {e}")
 
-        # Initialize OpenAI embeddings
         self.embeddings = OpenAIEmbeddings(
             model=self.embedding_model_name,
             openai_api_key=self.openai_api_key
         )
 
-        # Initialize OpenAI LLM
         self.llm = ChatOpenAI(
             model_name=self.llm_model_name,
             temperature=0.5,
             openai_api_key=self.openai_api_key
         )
     
-        # Set up vector store
         try:
             self.vector_store = MongoDBAtlasVectorSearch(
                 collection=self.collection,
@@ -123,7 +107,7 @@ class LangchainMongoDBClient:
                 embedding_key="embedding"
             )
             self.retriever = self.vector_store.as_retriever(
-                search_kwargs={"k": 3}  # Retrieve top 3 most relevant documents
+                search_kwargs={"k": 3} 
             )
             logger.info("Vector search retriever initialized successfully")
             self.use_rag = True
@@ -132,11 +116,9 @@ class LangchainMongoDBClient:
             logger.warning("Falling back to direct LLM queries without RAG")
             self.use_rag = False
         
-        # Set up system prompt
         self.system_prompt = system_prompt or "You are a helpful AI assistant."
     
-        # Set up prompt templates
-        # RAG prompt template (with document context)
+        
         self.rag_chat_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(self.system_prompt),
             SystemMessagePromptTemplate.from_template(
@@ -147,7 +129,6 @@ class LangchainMongoDBClient:
             HumanMessagePromptTemplate.from_template("{question}")
         ])
         
-        # Direct LLM prompt template (fallback, no document context)
         self.direct_chat_prompt = ChatPromptTemplate.from_messages([
             SystemMessagePromptTemplate.from_template(self.system_prompt),
             SystemMessagePromptTemplate.from_template("Conversation summary: {summary}"),
@@ -155,7 +136,6 @@ class LangchainMongoDBClient:
             HumanMessagePromptTemplate.from_template("{question}")
         ])
 
-        # Set up RAG chain
         if self.use_rag:
             self.rag_chain = (
                 {
@@ -169,7 +149,6 @@ class LangchainMongoDBClient:
                 | StrOutputParser()
             )
         
-        # Set up direct LLM chain (fallback or when no relevant docs found)
         self.direct_llm_chain = (
             self.direct_chat_prompt
             | self.llm
@@ -225,7 +204,7 @@ class LangchainMongoDBClient:
         try:
             logger.info(f"Adding {len(texts)} texts to MongoDB collection '{self.mongodb_collection_name}'...")
             
-            # Split long texts into smaller chunks for better retrieval
+            
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size=1000,
                 chunk_overlap=100,
@@ -235,22 +214,16 @@ class LangchainMongoDBClient:
             all_chunks = []
             all_metadatas = []
             
-            # Process each text document
             for i, text in enumerate(texts):
-                # Split text into smaller chunks
                 chunks = text_splitter.split_text(text)
                 all_chunks.extend(chunks)
                 
-                # Create metadata for each chunk
                 if metadatas and i < len(metadatas):
                     doc_metadata = metadatas[i]
-                    # Apply the same metadata to all chunks from this document
                     all_metadatas.extend([doc_metadata.copy() for _ in range(len(chunks))])
                 else:
-                    # Create default metadata
                     all_metadatas.extend([{"source": f"document_{i}"} for _ in range(len(chunks))])
             
-            # Add document chunks to vector store
             if self.use_rag:
                 try:
                     ids = self.vector_store.add_texts(
@@ -261,10 +234,8 @@ class LangchainMongoDBClient:
                     return ids
                 except Exception as e:
                     logger.error(f"Error adding texts to vector store: {e}")
-                    # Fall back to simple storage without embeddings
                     logger.warning("Falling back to simple document storage")
             
-            # Simple document storage without vector embeddings (fallback)
             document_ids = []
             for i, chunk in enumerate(all_chunks):
                 doc_id = str(uuid.uuid4())
@@ -299,17 +270,13 @@ class LangchainMongoDBClient:
         try:
             logger.info(f"Generating response for query: '{query}'")
             
-            # Format conversation history if provided
             chat_history = ""
             summary = "No summary available."
             if conversation_history:
-                # Limit to the most recent messages (prevent context length issues)
                 recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
                 
-                # Format history as a string with clear role indicators
                 history_messages = []
                 for msg in recent_history:
-                    # Skip system messages
                     if msg.get('role') == 'system':
                         if msg.get('is_summary', False):
                             summary = msg.get('content', summary)
@@ -321,17 +288,15 @@ class LangchainMongoDBClient:
                 chat_history = "\n".join(history_messages)
                 logger.debug(f"Using conversation history with {len(recent_history)} messages")
             
-            # Prepare input for chain
             chain_input = {
                 "question": query,
                 "chat_history": chat_history,
                 "summary": summary
             }
             
-            # Try RAG approach first
+            
             if self.use_rag:
                 try:
-                    # Check if we have documents in the collection
                     doc_count = self.collection.count_documents({})
                     if doc_count > 0:
                         logger.info(f"Using RAG with {doc_count} documents available")
@@ -343,7 +308,6 @@ class LangchainMongoDBClient:
                     logger.error(f"RAG retrieval failed: {e}")
                     logger.warning("Falling back to direct LLM")
             
-            # Fallback to direct LLM
             response = self.direct_llm_chain.invoke(chain_input)
             return response
         except Exception as e:

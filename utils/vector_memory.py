@@ -5,11 +5,9 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-# Import MongoDB dependencies
 try:
     from pymongo.errors import PyMongoError
     from utils.auth_setup import USE_MONGODB, conversations_collection, db
-    # Try to import threads_collection, but don't fail if it's not there yet
     try:
         from utils.auth_setup import threads_collection
     except ImportError:
@@ -19,7 +17,6 @@ except ImportError:
     PYMONGO_AVAILABLE = False
     threads_collection = None
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("vector_memory")
 
@@ -38,19 +35,15 @@ class Thread:
         self.created_at = datetime.now()
         self.summary = ""
         
-        # Local storage paths
         self.thread_store_dir = "chat_history"
         self.user_dir = os.path.join(self.thread_store_dir, username or "anonymous")
         self.thread_file_path = os.path.join(self.user_dir, f"{self.thread_id}_thread.json")
         
-        # Ensure storage directory exists
         if not os.path.exists(self.user_dir):
             os.makedirs(self.user_dir, exist_ok=True)
             
-        # Configure storage mode
         self.use_mongodb = PYMONGO_AVAILABLE and USE_MONGODB and threads_collection is not None
                 
-        # Load or create thread
         if thread_id:
             self.load_thread(thread_id)
         else:
@@ -65,7 +58,6 @@ class Thread:
         Returns:
             bool: Success status
         """
-        # Try MongoDB first
         if self.use_mongodb:
             try:
                 thread_data = threads_collection.find_one(
@@ -82,7 +74,6 @@ class Thread:
             except Exception as e:
                 logger.error(f"Failed to load thread {thread_id} from MongoDB: {e}")
         
-        # Fallback to local file
         try:
             thread_file = os.path.join(self.user_dir, f"{thread_id}_thread.json")
             if os.path.exists(thread_file):
@@ -109,7 +100,6 @@ class Thread:
         Returns:
             bool: Success status
         """
-        # Save to MongoDB
         if self.use_mongodb:
             try:
                 thread_data = {
@@ -121,7 +111,6 @@ class Thread:
                     "updated_at": datetime.now()
                 }
                 
-                # Upsert the thread data
                 threads_collection.update_one(
                     {"thread_id": self.thread_id, "username": self.username},
                     {"$set": thread_data},
@@ -131,7 +120,6 @@ class Thread:
             except Exception as e:
                 logger.error(f"Failed to save thread {self.thread_id} to MongoDB: {e}")
                 
-        # Save to local file
         try:
             thread_data = {
                 "thread_id": self.thread_id,
@@ -190,30 +178,23 @@ class VectorMemory:
         self.thread_id = thread_id
         self.current_thread = None
         
-        # Path for local file storage (fallback)
         self.message_store_dir = "chat_history"
         self.user_dir = os.path.join(self.message_store_dir, username or "anonymous")
         self.message_file_path = os.path.join(self.user_dir, f"{self.session_id}_messages.json")
 
-        # Ensure storage directory exists
         if not os.path.exists(self.user_dir):
             os.makedirs(self.user_dir, exist_ok=True)
         
-        # Configure storage mode
         self.use_mongodb = PYMONGO_AVAILABLE and USE_MONGODB
         
-        # Initialize or load thread if username provided
         if username:
-            # If thread_id provided, load that thread, otherwise create or load default thread
             if thread_id:
                 self.current_thread = Thread(username, thread_id)
             else:
-                # Try to find or create default thread
                 self.current_thread = self._get_or_create_default_thread()
                 if self.current_thread:
                     self.thread_id = self.current_thread.thread_id
             
-            # Load most recent session if we have a thread
             if self.current_thread:
                 self.load_most_recent_session()
                 
@@ -226,7 +207,6 @@ class VectorMemory:
         if not self.username:
             return None
             
-        # Try to find default thread in MongoDB first
         if self.use_mongodb and threads_collection is not None:
             try:
                 thread_data = threads_collection.find_one(
@@ -238,7 +218,6 @@ class VectorMemory:
             except Exception as e:
                 logger.error(f"Failed to get default thread from MongoDB: {e}")
                 
-        # Try local storage
         try:
             thread_dirs = [f for f in os.listdir(self.user_dir) if f.endswith("_thread.json")]
             for thread_file in thread_dirs:
@@ -253,10 +232,8 @@ class VectorMemory:
         except Exception as e:
             logger.error(f"Failed to get default thread from local storage: {e}")
             
-        # Create default thread if not found
         default_thread = Thread(self.username, thread_name="Chat 1")
         
-        # Mark as default in storage
         if self.use_mongodb and threads_collection is not None:
             try:
                 threads_collection.update_one(
@@ -266,7 +243,6 @@ class VectorMemory:
             except Exception as e:
                 logger.error(f"Failed to mark thread as default in MongoDB: {e}")
                 
-        # Also mark in local file
         try:
             with open(default_thread.thread_file_path, 'r') as f:
                 thread_data = json.load(f)
@@ -291,7 +267,6 @@ class VectorMemory:
             
         threads = []
         
-        # Get threads from MongoDB
         if self.use_mongodb and threads_collection is not None:
             try:
                 cursor = threads_collection.find({"username": self.username})
@@ -301,7 +276,6 @@ class VectorMemory:
             except Exception as e:
                 logger.error(f"Failed to get threads from MongoDB: {e}")
                 
-        # Get threads from local storage
         try:
             thread_files = [f for f in os.listdir(self.user_dir) if f.endswith("_thread.json")]
             for file_name in thread_files:
@@ -309,7 +283,6 @@ class VectorMemory:
                     with open(os.path.join(self.user_dir, file_name), 'r') as f:
                         thread_data = json.load(f)
                     
-                    # Check if thread is already in the list (from MongoDB)
                     if not any(t["thread_id"] == thread_data["thread_id"] for t in threads):
                         threads.append(thread_data)
                 except Exception as e:
@@ -333,17 +306,14 @@ class VectorMemory:
             
         new_thread = Thread(self.username, thread_name=thread_name)
         
-        # Update current thread
         self.current_thread = new_thread
         self.thread_id = new_thread.thread_id
         
-        # Clear session to start fresh
         self.clear()
         
-        # Save an empty message to ensure the session exists
+
         self.save_messages()
         
-        # Explicitly load the new session
         logger.info(f"Created new thread: {thread_name} with ID: {new_thread.thread_id}")
         
         return new_thread
@@ -360,16 +330,13 @@ class VectorMemory:
         if not self.username:
             return False
             
-        # Load thread
         new_thread = Thread(self.username, thread_id)
         if not new_thread.thread_id:
             return False
             
-        # Update current thread
         self.current_thread = new_thread
         self.thread_id = new_thread.thread_id
         
-        # Load most recent session for this thread
         return self.load_most_recent_session()
     
     def load_most_recent_session(self) -> bool:
@@ -381,17 +348,17 @@ class VectorMemory:
         if not self.username:
             return False
             
-        # Try MongoDB first (if available)
+        
         if self.use_mongodb:
             try:
-                # Check if conversations_collection is available
+                
                 if 'conversations_collection' in globals() and conversations_collection is not None:
-                    # Create a filter based on username and thread_id
+                    
                     filter_query = {"username": self.username}
                     if self.thread_id:
                         filter_query["thread_id"] = self.thread_id
                         
-                    # Find most recent session for this user/thread
+                    
                     pipeline = [
                         {"$match": filter_query},
                         {"$sort": {"timestamp": -1}},
@@ -410,9 +377,7 @@ class VectorMemory:
             except PyMongoError as e:
                 logger.error(f"Failed to load recent session from MongoDB: {e}")
                 
-        # Fallback to local storage
         try:
-            # Find most recent session file
             if not os.path.exists(self.user_dir):
                 return False
                 
@@ -420,7 +385,6 @@ class VectorMemory:
             if not session_files:
                 return False
                 
-            # If thread_id specified, filter to only include files with that thread
             if self.thread_id:
                 thread_session_files = []
                 for file_name in session_files:
@@ -438,7 +402,6 @@ class VectorMemory:
             if not session_files:
                 return False
                 
-            # Sort by file modification time (most recent first)
             session_files.sort(key=lambda f: os.path.getmtime(os.path.join(self.user_dir, f)), reverse=True)
             
             most_recent_file = session_files[0]
@@ -471,12 +434,11 @@ class VectorMemory:
         if not session_id:
             return False
             
-        # Try MongoDB first (if available)
         if self.use_mongodb:
             try:
-                # Check if conversations_collection is available
+                
                 if 'conversations_collection' in globals() and conversations_collection is not None:
-                    # Create filter query
+                    
                     filter_query = {"username": self.username, "session_id": session_id}
                     if self.thread_id:
                         filter_query["thread_id"] = self.thread_id
@@ -492,7 +454,7 @@ class VectorMemory:
                         self.messages = messages
                         self.summary = self._get_or_create_summary(messages)
                         
-                        # Update thread_id if it was in the message but not set in memory
+                        
                         if not self.thread_id and "thread_id" in messages[0]:
                             self.thread_id = messages[0]["thread_id"]
                             
@@ -503,29 +465,26 @@ class VectorMemory:
             except PyMongoError as e:
                 logger.error(f"Failed to load session {session_id} from MongoDB: {e}")
         
-        # Fallback to local storage
         try:
             session_file = os.path.join(self.user_dir, f"{session_id}_messages.json")
             if os.path.exists(session_file):
                 with open(session_file, 'r') as f:
                     messages = json.load(f)
                 
-                # Convert string timestamps to datetime objects
+                
                 for msg in messages:
                     if "timestamp" in msg and isinstance(msg["timestamp"], str):
                         try:
-                            # Handle ISO format strings
                             msg["timestamp"] = datetime.fromisoformat(msg["timestamp"].replace('Z', '+00:00'))
                         except (ValueError, TypeError):
-                            # If parsing fails, use current time
                             msg["timestamp"] = datetime.now()
                 
-                # If thread_id specified, check that it matches
+                
                 if self.thread_id and messages and messages[0].get("thread_id") != self.thread_id:
                     logger.info(f"Session {session_id} belongs to different thread, not loading")
                     return False
                     
-                # Update thread_id if it was in the message but not set in memory
+                
                 if not self.thread_id and messages and "thread_id" in messages[0]:
                     self.thread_id = messages[0]["thread_id"]
                 
@@ -548,12 +507,9 @@ class VectorMemory:
         """
         sessions = []
         
-        # Try MongoDB first (if available)
         if self.use_mongodb and self.username:
             try:
-                # Check if conversations_collection is available
                 if 'conversations_collection' in globals() and conversations_collection is not None:
-                    # Base query: username and optional thread_id
                     base_query = {"username": self.username}
                     if self.thread_id:
                         base_query["thread_id"] = self.thread_id
@@ -586,7 +542,6 @@ class VectorMemory:
             except PyMongoError as e:
                 logger.error(f"Failed to list sessions from MongoDB: {e}")
         
-        # Add local sessions (if user directory exists)
         if os.path.exists(self.user_dir):
             try:
                 session_files = [f for f in os.listdir(self.user_dir) if f.endswith("_messages.json")]
@@ -595,7 +550,7 @@ class VectorMemory:
                     session_id = file.split('_')[0]
                     file_path = os.path.join(self.user_dir, file)
                     
-                    # Skip sessions already found in MongoDB
+                    
                     if any(s["session_id"] == session_id for s in sessions):
                         continue
                     
@@ -603,22 +558,18 @@ class VectorMemory:
                         with open(file_path, 'r') as f:
                             messages = json.load(f)
                             
-                        # Skip if thread_id filter is applied and doesn't match
                         if self.thread_id and messages and messages[0].get("thread_id") != self.thread_id:
                             continue
                             
-                        # Determine thread ID
                         session_thread_id = None
                         if messages:
-                            # Get thread_id from first message if available
                             session_thread_id = messages[0].get("thread_id", None)
                         
-                        # Determine timestamps for sorting
+                        
                         first_message_time = None
                         last_message_time = None
                         
                         if messages:
-                            # Handle first message timestamp
                             if "timestamp" in messages[0]:
                                 timestamp = messages[0]["timestamp"]
                                 if isinstance(timestamp, str):
@@ -629,7 +580,6 @@ class VectorMemory:
                                 elif isinstance(timestamp, datetime):
                                     first_message_time = timestamp
                             
-                            # Handle last message timestamp
                             if "timestamp" in messages[-1]:
                                 timestamp = messages[-1]["timestamp"]
                                 if isinstance(timestamp, str):
@@ -650,36 +600,32 @@ class VectorMemory:
                         })
                     except Exception as e:
                         logger.error(f"Error reading session file {file}: {e}")
-                        # Skip this corrupted file but continue processing others
+                        
                         try:
-                            # Optionally delete or rename corrupted files
+                            
                             corrupted_path = os.path.join(self.user_dir, f"{file}.corrupted")
                             os.rename(file_path, corrupted_path)
                             logger.info(f"Renamed corrupted file {file} to {file}.corrupted")
                         except Exception:
-                            # If rename fails, just continue
                             pass
             except Exception as e:
                 logger.error(f"Failed to list local sessions: {e}")
         
-        # Sort by last message timestamp, newest first
+        
         def safe_sort_key(session):
             last_msg = session.get("last_message")
-            # Handle different types of timestamps by converting to datetime object or using a fallback date
             if last_msg is None:
-                # Use a recent future date for entries with no timestamp (sorts to beginning when reverse=True)
                 return datetime(2025, 1, 1)
             elif isinstance(last_msg, datetime):
                 return last_msg  # Already a datetime object
             elif isinstance(last_msg, str):
-                # Try to parse string to datetime
                 try:
                     return datetime.fromisoformat(last_msg.replace('Z', '+00:00'))
                 except (ValueError, TypeError):
-                    # If parsing fails, use a default date
+                    
                     return datetime(2025, 1, 1)
             else:
-                # For any other type, use default date
+                
                 return datetime(2025, 1, 1)
                 
         sessions.sort(key=safe_sort_key, reverse=True)
@@ -695,7 +641,7 @@ class VectorMemory:
         Returns:
             Dict containing the added message
         """
-        # Always use datetime objects for timestamps
+        
         timestamp = datetime.now()
         message = {
             "id": str(uuid.uuid4()),
@@ -705,25 +651,24 @@ class VectorMemory:
             "session_id": self.session_id
         }
         
-        # Add username if available
+        
         if self.username:
             message["username"] = self.username
             
-        # Add thread_id if available
         if self.thread_id:
             message["thread_id"] = self.thread_id
         
-        # Add to local memory first
+        
         self.messages.append(message)
         
-        # Try to save to MongoDB
+        
         if self.use_mongodb and self.username:
             try:
-                # Make sure conversations_collection is defined
+                
                 if 'conversations_collection' in globals() and conversations_collection is not None:
-                    # Create a copy of the message for MongoDB
+                    
                     mongo_message = message.copy()
-                    # MongoDB already expects a datetime object, so no conversion needed
+                    
                     conversations_collection.insert_one(mongo_message)
                     logger.debug(f"Saved message to MongoDB: {message['id']}")
                 else:
@@ -731,7 +676,7 @@ class VectorMemory:
             except PyMongoError as e:
                 logger.error(f"Failed to save message to MongoDB: {e}")
         
-        # For local storage, we'll convert datetime to string in save_messages
+        
         self.save_messages()
         
         return message
@@ -745,7 +690,7 @@ class VectorMemory:
         Returns:
             str: Summary text or default message
         """
-        # Check if there's a summary message
+        
         for msg in messages:
             if msg.get("is_summary", False):
                 return msg["content"]
@@ -754,13 +699,11 @@ class VectorMemory:
 
     def save_messages(self) -> None:
         """Save messages to storage (MongoDB and/or local file)"""
-        # Always save to local file as backup
         try:
-            # Convert messages to JSON-serializable format
             json_messages = []
             for msg in self.messages:
                 json_msg = msg.copy()
-                # Convert datetime objects to ISO format strings for JSON serialization
+                
                 if isinstance(json_msg.get("timestamp"), datetime):
                     json_msg["timestamp"] = json_msg["timestamp"].isoformat()
                 json_messages.append(json_msg)
@@ -776,14 +719,14 @@ class VectorMemory:
         Args:
             summary_text: The summary text
         """
-        # Update local summary
+        
         self.summary = summary_text
         
-        # Check if we should add as a message
+        
         if self.use_mongodb and self.username:
             try:
                 if 'conversations_collection' in globals() and conversations_collection is not None:
-                    # Create a special summary message
+                    
                     summary_message = {
                         "id": str(uuid.uuid4()),
                         "username": self.username,
@@ -794,11 +737,11 @@ class VectorMemory:
                         "is_summary": True
                     }
                     
-                    # Add thread_id if available
+                    
                     if self.thread_id:
                         summary_message["thread_id"] = self.thread_id
                     
-                    # Save to MongoDB
+                    
                     conversations_collection.insert_one(summary_message)
                 else:
                     logger.warning("MongoDB conversations_collection not available")
@@ -830,7 +773,7 @@ class VectorMemory:
         self.summary = new_summary
         self.store_summary(new_summary)
         
-        # Also update thread summary if available
+        
         if self.current_thread:
             self.current_thread.update_summary(new_summary)
 
@@ -860,14 +803,13 @@ class VectorMemory:
         if not self.current_thread or not api_client or not self.thread_id:
             return self.current_thread.summary if self.current_thread else ""
             
-        # Build a sample of messages from this thread
+
         all_sampled_messages = []
         
-        # Try MongoDB first
         if self.use_mongodb:
             try:
                 if 'conversations_collection' in globals() and conversations_collection is not None:
-                    # Sample messages from this thread
+                    
                     cursor = conversations_collection.find(
                         {"thread_id": self.thread_id, "role": {"$in": ["user", "assistant"]}},
                         {"role": 1, "content": 1, "_id": 0}
@@ -878,7 +820,6 @@ class VectorMemory:
             except Exception as e:
                 logger.error(f"Error retrieving thread messages from MongoDB: {e}")
                 
-        # Use local files if needed
         if not all_sampled_messages:
             try:
                 session_files = [f for f in os.listdir(self.user_dir) if f.endswith("_messages.json")]
@@ -889,12 +830,10 @@ class VectorMemory:
                         with open(os.path.join(self.user_dir, file), 'r') as f:
                             messages = json.load(f)
                             
-                        # Check if these messages belong to our thread
                         if messages and messages[0].get("thread_id") == self.thread_id:
-                            # Add a sample of messages from this file
                             sample_size = min(3, len(messages))
                             sampled = [{"role": msg["role"], "content": msg["content"]} 
-                                      for msg in messages[-sample_size:]]  # Take most recent
+                                      for msg in messages[-sample_size:]] 
                             thread_messages.extend(sampled)
                     except Exception as e:
                         logger.error(f"Error reading session file {file}: {e}")
@@ -903,17 +842,16 @@ class VectorMemory:
             except Exception as e:
                 logger.error(f"Error processing local files for thread summary: {e}")
                 
-        # If we have messages, generate a summary
         if all_sampled_messages:
             from utils.config import THREAD_SUMMARY_TEMPLATE
             
-            # Format messages for the prompt
+            
             messages_text = "\n".join([
                 f"{msg['role'].capitalize()}: {msg['content'][:100]}..." 
                 for msg in all_sampled_messages
             ])
             
-            # Generate summary
+            
             try:
                 summary_prompt = THREAD_SUMMARY_TEMPLATE.format(
                     thread_name=self.current_thread.thread_name,
@@ -923,18 +861,18 @@ class VectorMemory:
                 summary = api_client.llm.invoke(summary_prompt)
                 
                 if isinstance(summary, str):
-                    # Extract summary if in expected format
+                    
                     if "Summary:" in summary:
                         summary = summary.split("Summary:")[-1].strip()
                     
-                    # Update thread summary
+                    
                     self.current_thread.update_summary(summary)
                     return summary
                 
             except Exception as e:
                 logger.error(f"Error generating thread summary: {e}")
         
-        # Return existing summary if we couldn't generate a new one
+        
         return self.current_thread.summary if self.current_thread else ""
 
     def get_all_messages(self) -> List[Dict[str, Any]]:
@@ -948,18 +886,18 @@ class VectorMemory:
     def clear(self) -> bool:
         """Clear the current conversation and start a new session"""
         try:
-            # Save the old session ID for reference
+
             old_session_id = self.session_id
             
-            # Generate new session ID
+
             self.session_id = str(uuid.uuid4())
             self.messages = []
             self.summary = "No conversation has occurred yet."
             
-            # Update file path for local storage
+            
             self.message_file_path = os.path.join(self.user_dir, f"{self.session_id}_messages.json")
             
-            # Save the empty state
+            
             self.save_messages()
             
             logger.info(f"Cleared session {old_session_id}, started new session {self.session_id}")
@@ -969,7 +907,7 @@ class VectorMemory:
             return False
 
 if __name__ == '__main__':
-    # Example Usage
+    
     memory = VectorMemory(username="test_user")
     print(f"Session ID: {memory.session_id}")
 

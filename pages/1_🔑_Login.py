@@ -1,18 +1,18 @@
 import streamlit as st
 from utils.auth_setup import setup_auth, login, is_authenticated
 
-# Page configuration
+
 st.set_page_config(page_title="Login - EthosBot", page_icon="🔑", layout="wide")
 
-# Initialize authentication system
+
 setup_auth()
 
-# Check if already logged in
+
 if is_authenticated():
     st.success("You are already logged in!")
     st.write("You can now access the application.")
     
-    # Navigation buttons
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Go to Main Application", use_container_width=True):
@@ -25,11 +25,11 @@ if is_authenticated():
     
     st.stop()
 
-# Main content
+
 st.title("Log in to EthosBot")
 st.markdown("Access the Socratic Ethics Assistant")
 
-# Center the login form
+
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
@@ -46,7 +46,6 @@ with col2:
             else:
                 user = login(username, password)
                 if user:
-                    # Store in session state
                     st.session_state.user = user
                     st.session_state.remember_me = remember_me
                     st.success("Logged in successfully!")
@@ -54,7 +53,7 @@ with col2:
                 else:
                     st.error("Invalid username or password.")
     
-    # Navigation links
+    
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Sign Up", use_container_width=True):
