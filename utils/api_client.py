@@ -25,6 +25,8 @@ class SimpleAPIClient:
             raise ImportError("Required dependencies not available. Please install them and try again.")
             
         self._init_client(system_prompt)
+        self.curriculum_collection = self.db["Curriculum"]
+        self.user_progress_collection = self.db["UserProgress"]
 
     def _init_client(self, system_prompt: Optional[str] = None):
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -132,68 +134,332 @@ class SimpleAPIClient:
             logger.error(f"Error retrieving conversation history: {e}")
             return []
 
+    def get_current_topic(self, username: str, session_id: str) -> Dict:
+        """Get the current topic for the user"""
+        try:
+            progress = self.user_progress_collection.find_one({
+                "username": username,
+                "session_id": session_id
+            })
+            
+            if not progress:
+                # Initialize user progress with first topic
+                first_topic = self.curriculum_collection.find_one({"order": 1})
+                if first_topic:
+                    self.user_progress_collection.insert_one({
+                        "username": username,
+                        "session_id": session_id,
+                        "current_topic": first_topic["topic_id"],
+                        "completed_topics": [],
+                        "assessment_status": {
+                            "topic_id": first_topic["topic_id"],
+                            "attempts": 0,
+                            "passed": False,
+                            "last_attempt": None
+                        },
+                        "learning_phase_complete": False
+                    })
+                    return first_topic
+            else:
+                current_topic = self.curriculum_collection.find_one({
+                    "topic_id": progress["current_topic"]
+                })
+                return current_topic
+                
+        except Exception as e:
+            logger.error(f"Error getting current topic: {e}")
+            return None
+
+    def get_topic_content(self, topic_id: str) -> Dict:
+        """Get the content for a specific topic"""
+        try:
+            return self.curriculum_collection.find_one({"topic_id": topic_id})
+        except Exception as e:
+            logger.error(f"Error getting topic content: {e}")
+            return None
+
+    def evaluate_assessment(self, username: str, session_id: str, answer: str) -> Dict:
+        """Evaluate user's answer to the assessment question"""
+        try:
+            progress = self.user_progress_collection.find_one({
+                "username": username,
+                "session_id": session_id
+            })
+            
+            if not progress:
+                return {"error": "No progress found for user"}
+                
+            current_topic = self.get_topic_content(progress["current_topic"])
+            if not current_topic:
+                return {"error": "Topic not found"}
+                
+            assessment = current_topic["content"]["assessment"]
+            print(f"[DEBUG] User answer: {answer}")
+            print(f"[DEBUG] Correct answer: {assessment['correct_answer']}")
+            is_correct = self._check_answer(answer, assessment["correct_answer"])
+            print(f"[DEBUG] is_correct: {is_correct}")
+            
+            # Update assessment status
+            result = self.user_progress_collection.update_one(
+                {
+                    "username": username,
+                    "session_id": session_id
+                },
+                {
+                    "$inc": {"assessment_status.attempts": 1},
+                    "$set": {
+                        "assessment_status.last_attempt": datetime.utcnow(),
+                        "assessment_status.passed": is_correct
+                    }
+                }
+            )
+            print(f"[DEBUG] MongoDB update matched: {result.matched_count}, modified: {result.modified_count}")
+            
+            if is_correct:
+                # Move to next topic
+                next_topic = self.curriculum_collection.find_one({
+                    "order": current_topic["order"] + 1
+                })
+                
+                if next_topic:
+                    self.user_progress_collection.update_one(
+                        {
+                            "username": username,
+                            "session_id": session_id
+                        },
+                        {
+                            "$set": {
+                                "current_topic": next_topic["topic_id"],
+                                "assessment_status": {
+                                    "topic_id": next_topic["topic_id"],
+                                    "attempts": 0,
+                                    "passed": False,
+                                    "last_attempt": None
+                                }
+                            },
+                            "$push": {"completed_topics": current_topic["topic_id"]}
+                        }
+                    )
+                else:
+                    # No more topics, mark learning phase as complete
+                    self.user_progress_collection.update_one(
+                        {
+                            "username": username,
+                            "session_id": session_id
+                        },
+                        {
+                            "$set": {"learning_phase_complete": True}
+                        }
+                    )
+            
+            return {
+                "is_correct": is_correct,
+                "hints": assessment["hints"] if not is_correct else [],
+                "next_topic": next_topic["topic_id"] if is_correct and next_topic else None,
+                "learning_complete": is_correct and not next_topic
+            }
+            
+        except Exception as e:
+            print(f"[DEBUG] Error in evaluate_assessment: {e}")
+            logger.error(f"Error evaluating assessment: {e}")
+            return {"error": str(e)}
+
+    def _check_answer(self, user_answer: str, correct_answer: str) -> bool:
+        """Evaluate user's answer using LLM for semantic understanding"""
+        try:
+            evaluation_prompt = f"""You are an educational assessment evaluator. Your task is to evaluate if the student's answer demonstrates understanding of the concept, even if the wording is different.\n\nCorrect Answer: {correct_answer}\nStudent's Answer: {user_answer}\n\nEvaluate if the student's answer:\n1. Contains the key concepts from the correct answer\n2. Demonstrates understanding of the topic\n3. Is logically sound and relevant\n\nRespond with ONLY 'CORRECT' if the answer is acceptable, or 'INCORRECT' if it's not.\nBe lenient in your evaluation - if the student demonstrates understanding even with different wording, mark it as CORRECT."""
+            response = self.openai_client.chat.completions.create(
+                model=self.llm_model_name,
+                messages=[{"role": "system", "content": evaluation_prompt}],
+                temperature=0.3,
+                max_tokens=10
+            )
+            evaluation = response.choices[0].message.content.strip().upper()
+            logger.info(f"[DEBUG] LLM output: {evaluation}")
+            return evaluation == "CORRECT"
+        except Exception as e:
+            logger.error(f"Error evaluating answer: {e}")
+            return self._fallback_keyword_check(user_answer, correct_answer)
+
+    def _fallback_keyword_check(self, user_answer: str, correct_answer: str) -> bool:
+        """Fallback method using keyword matching when LLM evaluation fails"""
+        try:
+            # Extract key concepts from correct answer
+            extraction_prompt = f"""Extract the key concepts from this answer. Return only the key concepts as a comma-separated list:
+
+            Answer: {correct_answer}"""
+
+            response = self.openai_client.chat.completions.create(
+                model=self.llm_model_name,
+                messages=[{"role": "system", "content": extraction_prompt}],
+                temperature=0.3,
+                max_tokens=100
+            )
+            
+            key_concepts = [concept.strip().lower() for concept in response.choices[0].message.content.split(",")]
+            user_answer_lower = user_answer.lower()
+            
+            # Check if at least 70% of key concepts are present in user's answer
+            matches = sum(1 for concept in key_concepts if concept in user_answer_lower)
+            return matches / len(key_concepts) >= 0.7
+            
+        except Exception as e:
+            logger.error(f"Error in fallback keyword check: {e}")
+            return False
+
+    def is_learning_phase_complete(self, username: str, session_id: str) -> bool:
+        """Check if user has completed the learning phase"""
+        try:
+            progress = self.user_progress_collection.find_one({
+                "username": username,
+                "session_id": session_id
+            })
+            return progress.get("learning_phase_complete", False) if progress else False
+        except Exception as e:
+            logger.error(f"Error checking learning phase completion: {e}")
+            return False
+
+    def _detect_intent(self, user_message: str) -> str:
+        msg = user_message.lower().strip()
+        if any(kw in msg for kw in ["all topics", "curriculum", "list topics", "show topics"]):
+            return "list_topics"
+        if any(kw in msg for kw in ["next", "what do you suggest", "what's next", "continue", "move on"]):
+            return "next_topic"
+        # Check for topic name in message
+        topics = list(self.curriculum_collection.find({}, {"topic_name": 1, "topic_id": 1}))
+        for t in topics:
+            if t["topic_name"].lower() in msg:
+                return f"jump_to:{t['topic_id']}"
+        return "default"
+
+    def _list_all_topics(self):
+        topics = list(self.curriculum_collection.find({}, {"order": 1, "topic_name": 1}).sort("order", 1))
+        return "Here are all the topics in the curriculum:\n" + "\n".join([f"{t['order']}. {t['topic_name']}" for t in topics])
+
+    def set_awaiting_assessment(self, username: str, session_id: str, value: bool):
+        try:
+            self.user_progress_collection.update_one(
+                {"username": username, "session_id": session_id},
+                {"$set": {"awaiting_assessment": value}}
+            )
+        except Exception as e:
+            logger.error(f"Error setting awaiting_assessment: {e}")
+
+    def is_awaiting_assessment(self, username: str, session_id: str) -> bool:
+        try:
+            progress = self.user_progress_collection.find_one({"username": username, "session_id": session_id})
+            return progress.get("awaiting_assessment", False) if progress else False
+        except Exception as e:
+            logger.error(f"Error checking awaiting_assessment: {e}")
+            return False
+
     def generate_response(self, query: str, username: str, session_id: str, conversation_history: Optional[List[Dict]] = None) -> str:
         logger.info("Entered generate_response function.")
         if not query:
             logger.warning("Empty query received.")
             return "Query cannot be empty."
         
-        logger.info("About to retrieve session summary.")
         try:
-            # Check if we should update the summary
-            if self.should_update_summary(session_id, username):
-                logger.info("Summary needs to be updated.")
-                summary = self.generate_chat_summary(session_id, username)
-            else:
-                summary = self.get_session_summary(session_id, username)
-                
-            logger.info(f"Summary retrieval complete. Summary: {summary[:100] if summary else 'None'}")
-        except Exception as e:
-            logger.error(f"Error retrieving summary: {e}", exc_info=True)
-            summary = None
+            # Check if we're in learning phase
+            if not self.is_learning_phase_complete(username, session_id):
+                current_topic = self.get_current_topic(username, session_id)
+                if current_topic:
+                    # Check if awaiting assessment answer
+                    if self.is_awaiting_assessment(username, session_id):
+                        evaluation = self.evaluate_assessment(username, session_id, query)
+                        self.set_awaiting_assessment(username, session_id, False)
+                        if evaluation.get("error"):
+                            assistant_response = f"Error: {evaluation['error']}"
+                        elif evaluation["is_correct"]:
+                            next_topic = self.curriculum_collection.find_one({"order": current_topic["order"] + 1})
+                            if next_topic:
+                                assistant_response = f"Correct! Let's move on to the next topic: {next_topic['topic_name']}\n\n" + "\n".join(next_topic['content']['main_points'])
+                            else:
+                                assistant_response = "Congratulations! You have completed the learning phase. You can now proceed to the discussion phase."
+                        else:
+                            hints = "\n".join(evaluation["hints"])
+                            assistant_response = f"That's not quite right. Here are some hints:\n{hints}\n\nPlease try again."
+                        self.save_message_to_db(username, {"role": "user", "content": query}, session_id)
+                        self.save_message_to_db(username, {"role": "assistant", "content": assistant_response}, session_id)
+                        return assistant_response
+                    # This is a regular learning query
+                    system_prompt = f"""You are a teaching assistant helping the user learn about fine-tuning. 
+                    Current topic: {current_topic['topic_name']}
+                    Main points to cover: {', '.join(current_topic['content']['main_points'])}
+                    Examples to use: {', '.join(current_topic['content']['examples'])}
+                    
+                    Your role is to:
+                    1. Explain the current topic clearly and systematically
+                    2. Use the provided examples to illustrate concepts
+                    3. Answer any questions the user has about the topic
+                    4. When the user seems ready, ask them the assessment question: {current_topic['content']['assessment']['question']}
+                    
+                    Be friendly and encouraging in your explanations."""
+                    
+                    messages = [{"role": "system", "content": system_prompt}]
+                    if conversation_history:
+                        messages.extend(conversation_history[-5:])
+                    messages.append({"role": "user", "content": query})
+                    
+                    response = self.openai_client.chat.completions.create(
+                        model=self.llm_model_name,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=2000
+                    )
+                    assistant_response = response.choices[0].message.content
+                    # If the bot asks the assessment question, set awaiting_assessment to True
+                    assessment_question = current_topic['content']['assessment']['question'].strip().lower()
+                    if assessment_question in assistant_response.strip().lower():
+                        self.set_awaiting_assessment(username, session_id, True)
+                    self.save_message_to_db(username, {"role": "user", "content": query}, session_id)
+                    self.save_message_to_db(username, {"role": "assistant", "content": assistant_response}, session_id)
+                    return assistant_response
+            # If learning phase is complete, proceed with normal response generation
+            logger.info("About to retrieve session summary.")
+            try:
+                if self.should_update_summary(session_id, username):
+                    logger.info("Summary needs to be updated.")
+                    summary = self.generate_chat_summary(session_id, username)
+                else:
+                    summary = self.get_session_summary(session_id, username)
+                    
+                logger.info(f"Summary retrieval complete. Summary: {summary[:100] if summary else 'None'}")
+            except Exception as e:
+                logger.error(f"Error retrieving summary: {e}", exc_info=True)
+                summary = None
 
-        system_prompt = self.system_prompt
-        if summary:
-            system_prompt += f"\n\nConversation summary so far:\n{summary}"
-        logger.info("System prompt prepared.")
+            system_prompt = self.system_prompt
+            if summary:
+                system_prompt += f"\n\nConversation summary so far:\n{summary}"
+            logger.info("System prompt prepared.")
 
-        try:
-            logger.info(f"Generating response for query: '{query}'")
             messages = [{"role": "system", "content": system_prompt}]
-            
             if conversation_history:
-                logger.info("Adding conversation history to messages.")
-                recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
-                messages.extend(recent_history)
-            
+                messages.extend(conversation_history[-10:])
             messages.append({"role": "user", "content": query})
-            logger.info("Messages prepared for OpenAI call.")
 
-            logger.info("Calling OpenAI chat completion API...")
             response = self.openai_client.chat.completions.create(
                 model=self.llm_model_name,
                 messages=messages,
                 temperature=0.7,
                 max_tokens=2000
             )
-            logger.info("OpenAI chat completion API call successful.")
 
             response_content = response.choices[0].message.content
-            logger.info(f"OpenAI response content: {response_content[:100]}")  # Log first 100 chars
 
             self.save_message_to_db(username, {
                 "role": "user",
                 "content": query
             }, session_id)
-            logger.info("User message saved to DB.")
 
             self.save_message_to_db(username, {
                 "role": "assistant",
                 "content": response_content
             }, session_id)
-            logger.info("Assistant message saved to DB.")
 
             return response_content
+            
         except Exception as e:
             logger.error(f"Error generating response: {e}", exc_info=True)
             return f"Apologies, an error occurred: {str(e)}"
@@ -326,8 +592,8 @@ class SimpleAPIClient:
                 "username": username
             })
             
-            # Update if message count has increased by more than 5
-            return current_count - doc.get("message_count", 0) > 5
+            # Update if message count has increased by more than 3
+            return current_count - doc.get("message_count", 0) > 3
             
         except Exception as e:
             logger.error(f"Error checking if summary should be updated: {e}")

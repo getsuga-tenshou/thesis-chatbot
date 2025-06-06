@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 from utils.auth_setup import setup_auth, is_authenticated, login
 from utils.api_client import SimpleAPIClient
+import uuid
 
 load_dotenv()
 
@@ -63,7 +64,6 @@ else:
         st.session_state.messages = []
     
     if "session_id" not in st.session_state:
-        import uuid
         st.session_state.session_id = str(uuid.uuid4())
     
     with st.sidebar:
