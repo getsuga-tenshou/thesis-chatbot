@@ -1,29 +1,23 @@
 import os
 import logging
 from typing import List, Optional, Dict, Any
-import uuid
+from datetime import datetime
+import numpy as np
 
 from dotenv import load_dotenv
 
 logger = logging.getLogger("api_client")
 logger.setLevel(logging.INFO)
+
 try:
     from pymongo import MongoClient
-    from pymongo.server_api import ServerApi
-    from langchain_openai import ChatOpenAI
-    from langchain_openai import OpenAIEmbeddings
-    from langchain_mongodb import MongoDBAtlasVectorSearch
-    from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-    from langchain_core.runnables import RunnablePassthrough
-    from langchain_core.output_parsers import StrOutputParser
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
-    from langchain_core.messages import SystemMessage, HumanMessage
+    from openai import OpenAI
     IMPORTS_SUCCESSFUL = True
 except ImportError as e:
     logger.warning(f"Failed to import one or more dependencies: {e}")
     IMPORTS_SUCCESSFUL = False
 
-class LangchainMongoDBClient:
+class SimpleAPIClient:
     def __init__(self, system_prompt: Optional[str] = None):
         load_dotenv()
         
@@ -39,13 +33,13 @@ class LangchainMongoDBClient:
 
         self.mongo_db_uri = os.getenv("MONGO_DB_URI")
         self.mongodb_database_name = os.getenv("MONGODB_DATABASE_NAME", "Chatbot")
-        self.mongodb_collection_name = os.getenv("MONGODB_COLLECTION_NAME", "Embeddings")
+        self.mongodb_collection_name = os.getenv("MONGODB_COLLECTION_NAME", "chatHistory")
+        self.embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
         
         if not self.mongo_db_uri:
             raise ValueError("MONGO_DB_URI not set in .env file.")
 
-        self.llm_model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini-2024-07-18")
-        self.embedding_model_name = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small")
+        self.llm_model_name = os.getenv("LLM_MODEL_NAME", "gpt-4o-mini")
 
         self.mongo_client = MongoClient(self.mongo_db_uri)
         self.mongo_client.admin.command('ping')
@@ -53,287 +47,306 @@ class LangchainMongoDBClient:
         
         self.db = self.mongo_client[self.mongodb_database_name]
         self.collection = self.db[self.mongodb_collection_name]
+
+        self.openai_client = OpenAI(api_key=self.openai_api_key)
         
+        self.system_prompt = system_prompt or "You are a helpful AI assistant."
+        
+        # Create vector search index if it doesn't exist
+        self._ensure_vector_index()
+
+    def _ensure_vector_index(self):
+        """Create vector search index if it doesn't exist"""
         try:
-            if self.collection.count_documents({}) == 0:
-                logger.info(f"Collection {self.mongodb_collection_name} is empty")
-                
+            
             indexes = list(self.collection.list_indexes())
             vector_index_exists = any("vector" in idx.get("name", "") for idx in indexes)
             
             if not vector_index_exists:
-                try:
-                    index_definition = {
-                        "mappings": {
-                            "dynamic": True,
-                            "fields": {
-                                "embedding": {
-                                    "type": "knnVector",
-                                    "dimensions": 1536,  # For text-embedding-3-small
-                                    "similarity": "cosine"
-                                }
+                
+                index_definition = {
+                    "mappings": {
+                        "dynamic": True,
+                        "fields": {
+                            "embedding": {
+                                "type": "knnVector",
+                                "dimensions": 1536,     
+                                "similarity": "cosine"
                             }
                         }
                     }
-                    self.db.command({
-                        "createSearchIndex": self.mongodb_collection_name,
-                        "definition": index_definition,
-                        "name": "vector_index"
-                    })
-                    logger.info(f"Created vector search index for collection {self.mongodb_collection_name}")
-                except Exception as e:
-                    logger.error(f"Failed to create vector search index: {e}")
-                    logger.warning("Proceeding with direct LLM queries without vector search")
-        except Exception as e:
-            logger.error(f"Error checking vector index: {e}")
-
-        self.embeddings = OpenAIEmbeddings(
-            model=self.embedding_model_name,
-            openai_api_key=self.openai_api_key
-        )
-
-        self.llm = ChatOpenAI(
-            model_name=self.llm_model_name,
-            temperature=0.5,
-            openai_api_key=self.openai_api_key
-        )
-    
-        try:
-            self.vector_store = MongoDBAtlasVectorSearch(
-                collection=self.collection,
-                embedding=self.embeddings,
-                index_name="vector_index",
-                text_key="text",
-                embedding_key="embedding"
-            )
-            self.retriever = self.vector_store.as_retriever(
-                search_kwargs={"k": 3} 
-            )
-            logger.info("Vector search retriever initialized successfully")
-            self.use_rag = True
-        except Exception as e:
-            logger.error(f"Failed to initialize vector search: {e}")
-            logger.warning("Falling back to direct LLM queries without RAG")
-            self.use_rag = False
-        
-        self.system_prompt = system_prompt or "You are a helpful AI assistant."
-    
-        
-        self.rag_chat_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(self.system_prompt),
-            SystemMessagePromptTemplate.from_template(
-                "Context information from knowledge base:\n{context}\n\n"
-                "Conversation summary: {summary}"
-            ),
-            MessagesPlaceholder(variable_name="chat_history"),
-            HumanMessagePromptTemplate.from_template("{question}")
-        ])
-        
-        self.direct_chat_prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(self.system_prompt),
-            SystemMessagePromptTemplate.from_template("Conversation summary: {summary}"),
-            MessagesPlaceholder(variable_name="chat_history"),
-            HumanMessagePromptTemplate.from_template("{question}")
-        ])
-
-        if self.use_rag:
-            self.rag_chain = (
-                {
-                    "context": lambda x: self.get_relevant_context(x["question"]),
-                    "question": lambda x: x["question"],
-                    "chat_history": lambda x: self.format_chat_history(x["chat_history"]),
-                    "summary": lambda x: x.get("summary", "No summary available.")
                 }
-                | self.rag_chat_prompt
-                | self.llm
-                | StrOutputParser()
-            )
-        
-        self.direct_llm_chain = (
-            self.direct_chat_prompt
-            | self.llm
-            | StrOutputParser()
-        )
-
-    def format_chat_history(self, chat_history_str: str) -> List:
-        if not chat_history_str:
-            return []
-            
-        messages = []
-        lines = chat_history_str.strip().split("\n")
-        
-        for line in lines:
-            if line.startswith("User:"):
-                content = line[5:].strip()
-                messages.append(HumanMessage(content=content))
-            elif line.startswith("Assistant:"):
-                content = line[10:].strip()
-                messages.append(SystemMessage(content=content))
-        
-        return messages
-
-    def get_relevant_context(self, query: str) -> str:
-        try:
-            if not self.use_rag:
-                return ""
-                
-            docs = self.retriever.get_relevant_documents(query)
-            if not docs:
-                return ""
-                
-            context_texts = [doc.page_content for doc in docs]
-            return "\n\n".join(context_texts)
+                self.db.command({
+                    "createSearchIndex": self.mongodb_collection_name,
+                    "definition": index_definition,
+                    "name": "vector_index"
+                })
+                logger.info(f"Created vector search index for collection {self.mongodb_collection_name}")
         except Exception as e:
-            logger.error(f"Error getting context: {e}")
-            return ""
+            logger.error(f"Error creating vector index: {e}")
 
-    def add_texts(self, texts: List[str], metadatas: Optional[List[dict]] = None) -> List[str]:
-        """Add texts to vector store with embeddings
+    def generate_embedding(self, text: str) -> List[float]:
         
-        Args:
-            texts: List of text documents to add
-            metadatas: Optional metadata for each document
-            
-        Returns:
-            List of document IDs
-        """
-        if not texts:
-            logger.warning("No texts provided to add.")
-            return []
-            
         try:
-            logger.info(f"Adding {len(texts)} texts to MongoDB collection '{self.mongodb_collection_name}'...")
-            
-            
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,
-                chunk_overlap=100,
-                separators=["\n\n", "\n", ". ", " ", ""]
+            response = self.openai_client.embeddings.create(
+                model=self.embedding_model_name,
+                input=text
             )
-            
-            all_chunks = []
-            all_metadatas = []
-            
-            for i, text in enumerate(texts):
-                chunks = text_splitter.split_text(text)
-                all_chunks.extend(chunks)
-                
-                if metadatas and i < len(metadatas):
-                    doc_metadata = metadatas[i]
-                    all_metadatas.extend([doc_metadata.copy() for _ in range(len(chunks))])
-                else:
-                    all_metadatas.extend([{"source": f"document_{i}"} for _ in range(len(chunks))])
-            
-            if self.use_rag:
-                try:
-                    ids = self.vector_store.add_texts(
-                        texts=all_chunks,
-                        metadatas=all_metadatas
-                    )
-                    logger.info(f"Added {len(ids)} text chunks with embeddings")
-                    return ids
-                except Exception as e:
-                    logger.error(f"Error adding texts to vector store: {e}")
-                    logger.warning("Falling back to simple document storage")
-            
-            document_ids = []
-            for i, chunk in enumerate(all_chunks):
-                doc_id = str(uuid.uuid4())
-                document_ids.append(doc_id)
-                
-                doc = {
-                    "_id": doc_id,
-                    "text": chunk,
-                    "metadata": all_metadatas[i] if i < len(all_metadatas) else {}
-                }
-                self.collection.insert_one(doc)
-            
-            logger.info(f"Added {len(document_ids)} text chunks without embeddings")
-            return document_ids
+            return response.data[0].embedding
         except Exception as e:
-            logger.error(f"Error adding texts: {e}")
-            raise
+            logger.error(f"Error generating embedding: {e}")
+            return []
 
-    def generate_rag_response(self, query: str, conversation_history=None) -> str:
-        """Generate a response using RAG or direct LLM based on availability
-        
-        Args:
-            query: User's query
-            conversation_history: Previous conversation messages
+    def save_message_to_db(self, username: str, message: Dict[str, Any], session_id: Optional[str] = None):
+        try:
+            # Always generate a new embedding for each message
+            content = message.get("content", "")
+            embedding = self.generate_embedding(content)
             
-        Returns:
-            Generated response text
-        """
+            message_doc = {
+                "username": username,
+                "session_id": session_id or "default",
+                "timestamp": datetime.utcnow(),
+                "role": message.get("role"),
+                "content": content,
+                "embedding": embedding,
+                "metadata": message.get("metadata", {})
+            }
+            self.collection.insert_one(message_doc)
+            logger.info(f"Saved message with embedding to MongoDB for user: {username}")
+        except Exception as e:
+            logger.error(f"Error saving message to MongoDB: {e}")
+
+    def get_conversation_history(self, username: str, session_id: Optional[str] = None, limit: int = 50):
+        try:
+            query = {"username": username}
+            if session_id:
+                query["session_id"] = session_id
+            
+            messages = list(self.collection.find(query)
+                          .sort("timestamp", 1)
+                          .limit(limit))
+            
+            return [{"role": msg["role"], "content": msg["content"]} for msg in messages]
+        except Exception as e:
+            logger.error(f"Error retrieving conversation history: {e}")
+            return []
+
+    def generate_response(self, query: str, username: str, session_id: str, conversation_history: Optional[List[Dict]] = None) -> str:
+        logger.info("Entered generate_response function.")
         if not query:
+            logger.warning("Empty query received.")
             return "Query cannot be empty."
-            
+        
+        logger.info("About to retrieve session summary.")
+        try:
+            # Check if we should update the summary
+            if self.should_update_summary(session_id, username):
+                logger.info("Summary needs to be updated.")
+                summary = self.generate_chat_summary(session_id, username)
+            else:
+                summary = self.get_session_summary(session_id, username)
+                
+            logger.info(f"Summary retrieval complete. Summary: {summary[:100] if summary else 'None'}")
+        except Exception as e:
+            logger.error(f"Error retrieving summary: {e}", exc_info=True)
+            summary = None
+
+        system_prompt = self.system_prompt
+        if summary:
+            system_prompt += f"\n\nConversation summary so far:\n{summary}"
+        logger.info("System prompt prepared.")
+
         try:
             logger.info(f"Generating response for query: '{query}'")
+            messages = [{"role": "system", "content": system_prompt}]
             
-            chat_history = ""
-            summary = "No summary available."
             if conversation_history:
+                logger.info("Adding conversation history to messages.")
                 recent_history = conversation_history[-10:] if len(conversation_history) > 10 else conversation_history
-                
-                history_messages = []
-                for msg in recent_history:
-                    if msg.get('role') == 'system':
-                        if msg.get('is_summary', False):
-                            summary = msg.get('content', summary)
-                        continue
-                    role = msg.get('role', '').capitalize()
-                    content = msg.get('content', '')
-                    history_messages.append(f"{role}: {content}")
-                
-                chat_history = "\n".join(history_messages)
-                logger.debug(f"Using conversation history with {len(recent_history)} messages")
+                messages.extend(recent_history)
             
-            chain_input = {
-                "question": query,
-                "chat_history": chat_history,
-                "summary": summary
-            }
-            
-            
-            if self.use_rag:
-                try:
-                    doc_count = self.collection.count_documents({})
-                    if doc_count > 0:
-                        logger.info(f"Using RAG with {doc_count} documents available")
-                        response = self.rag_chain.invoke(chain_input)
-                        return response
-                    else:
-                        logger.warning("No documents in collection, falling back to direct LLM")
-                except Exception as e:
-                    logger.error(f"RAG retrieval failed: {e}")
-                    logger.warning("Falling back to direct LLM")
-            
-            response = self.direct_llm_chain.invoke(chain_input)
-            return response
+            messages.append({"role": "user", "content": query})
+            logger.info("Messages prepared for OpenAI call.")
+
+            logger.info("Calling OpenAI chat completion API...")
+            response = self.openai_client.chat.completions.create(
+                model=self.llm_model_name,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=2000
+            )
+            logger.info("OpenAI chat completion API call successful.")
+
+            response_content = response.choices[0].message.content
+            logger.info(f"OpenAI response content: {response_content[:100]}")  # Log first 100 chars
+
+            self.save_message_to_db(username, {
+                "role": "user",
+                "content": query
+            }, session_id)
+            logger.info("User message saved to DB.")
+
+            self.save_message_to_db(username, {
+                "role": "assistant",
+                "content": response_content
+            }, session_id)
+            logger.info("Assistant message saved to DB.")
+
+            return response_content
         except Exception as e:
-            logger.error(f"Error generating response: {e}")
+            logger.error(f"Error generating response: {e}", exc_info=True)
             return f"Apologies, an error occurred: {str(e)}"
 
+    def find_similar_messages_by_embedding(self, query_embedding: List[float], username: str, limit: int = 5) -> List[Dict]:
+        """
+        Find similar messages using an existing embedding
+        """
+        try:
+            pipeline = [
+                {
+                    "$search": {
+                        "index": "vector_index",
+                        "knnBeta": {
+                            "vector": query_embedding,
+                            "path": "embedding",
+                            "k": limit
+                        }
+                    }
+                },
+                {
+                    "$match": {
+                        "username": username
+                    }
+                },
+                {
+                    "$project": {
+                        "role": 1,
+                        "content": 1,
+                        "timestamp": 1,
+                        "score": { "$meta": "searchScore" }
+                    }
+                }
+            ]
+            
+            similar_messages = list(self.collection.aggregate(pipeline))
+            return similar_messages
+        except Exception as e:
+            logger.error(f"Error finding similar messages: {e}")
+            return []
+
+    def generate_chat_summary(self, session_id: str, username: str, num_messages: int = 10) -> Optional[str]:
+        logger.info(f"Entered generate_chat_summary with session_id: {session_id}, username: {username}")
+        if not session_id or session_id == "default" or not username:
+            logger.warning("Invalid session_id or username for summary generation.")
+            return None
+
+        try:
+            logger.info("Fetching recent messages for summary.")
+            messages = list(self.collection.find(
+                {"session_id": session_id, "username": username}
+            ).sort("timestamp", -1).limit(num_messages))
+            
+            if not messages:
+                logger.info("No messages found for summary generation.")
+                return None
+
+            messages.reverse()
+            text = "\n".join([f"{m['role']}: {m['content']}" for m in messages])
+            
+            summary_prompt = """Please provide a concise summary of the following conversation. 
+            Focus on the main topics discussed and any important decisions or conclusions reached. 
+            Keep the summary under 200 words.
+            
+            Conversation:
+            {text}"""
+            
+            logger.info("Calling OpenAI for summary generation.")
+            summary = self.openai_client.chat.completions.create(
+                model=self.llm_model_name,
+                messages=[{"role": "system", "content": summary_prompt.format(text=text)}],
+                temperature=0.3,
+                max_tokens=200
+            ).choices[0].message.content
+            
+            logger.info(f"Summary generated: {summary[:100]}")  # Log first 100 chars
+
+            # Store summary in a separate collection
+            summary_collection = self.db["Summaries"]
+            summary_collection.update_one(
+                {"session_id": session_id, "username": username},
+                {
+                    "$set": {
+                        "summary": summary,
+                        "updated_at": datetime.utcnow(),
+                        "message_count": len(messages)
+                    }
+                },
+                upsert=True
+            )
+            logger.info("Summary stored successfully.")
+            return summary
+            
+        except Exception as e:
+            logger.error(f"Error generating or storing summary: {e}", exc_info=True)
+            return None
+
+    def get_session_summary(self, session_id: str, username: str) -> str:
+        logger.info(f"Entered get_session_summary with session_id: {session_id}, username: {username}")
+        if not session_id or session_id == "default" or not username:
+            logger.warning("Invalid session_id or username for summary retrieval.")
+            return ""
+            
+        try:
+            summary_collection = self.db["Summaries"]
+            doc = summary_collection.find_one({"session_id": session_id, "username": username})
+            
+            if doc and "summary" in doc:
+                logger.info("Summary found in database.")
+                return doc["summary"]
+            else:
+                logger.info("No summary found in database, generating new summary.")
+                return self.generate_chat_summary(session_id, username) or ""
+                
+        except Exception as e:
+            logger.error(f"Error retrieving summary from database: {e}", exc_info=True)
+            return ""
+
+    def should_update_summary(self, session_id: str, username: str) -> bool:
+        try:
+            summary_collection = self.db["Summaries"]
+            doc = summary_collection.find_one({"session_id": session_id, "username": username})
+            
+            if not doc:
+                return True
+                
+            # Get current message count
+            current_count = self.collection.count_documents({
+                "session_id": session_id,
+                "username": username
+            })
+            
+            # Update if message count has increased by more than 5
+            return current_count - doc.get("message_count", 0) > 5
+            
+        except Exception as e:
+            logger.error(f"Error checking if summary should be updated: {e}")
+            return False
+
 if __name__ == '__main__':
-    print("Initializing LangchainMongoDBClient...")
+    print("Initializing SimpleAPIClient...")
     print("Ensure .env file has: OPENAI_API_KEY, MONGO_DB_URI")
     
     try:
-        client = LangchainMongoDBClient()
-        print("LangchainMongoDBClient initialized.")
+        client = SimpleAPIClient()
+        print("SimpleAPIClient initialized.")
 
         print("\nTesting response generation...")
-        questions = [
-            "What is Langchain?",
-            "What color is the sky based on the context provided?"
-        ]
-        
-        for q_idx, test_query in enumerate(questions):
-            print(f"\n--- Query {q_idx+1} ---")
-            print(f"User Query: {test_query}")
-            response = client.generate_rag_response(test_query)
-            print(f"LLM Response: {response}")
+        test_query = "Hello, how are you?"
+        response = client.generate_response(test_query, "test_user", "default")
+        print(f"User Query: {test_query}")
+        print(f"LLM Response: {response}")
 
     except Exception as e:
         print(f"\nAn error occurred during the test run: {e}")
-        print("Please check your .env configuration, MongoDB connection, and model names.") 
+        print("Please check your .env configuration and MongoDB connection.")

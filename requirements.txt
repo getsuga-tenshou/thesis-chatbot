@@ -1,15 +1,7 @@
 streamlit
 python-dotenv
-torch
-pydantic
-langchain
-langchain-core
-langchain-openai
-langchain-community
 pymongo
-langchain-mongodb
-sentence-transformers
-InstructorEmbedding
 openai
 extra-streamlit-components
 pycryptodome
+bcrypt
