@@ -17,7 +17,7 @@ setup_auth()
 
 if not is_authenticated():
     st.write("## Welcome to EthosBot")
-    st.write("A simple conversational assistant.")
+    st.write("An Ethical Teaching Assistant")
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
@@ -48,7 +48,7 @@ if not is_authenticated():
             if st.button("Admin Panel", use_container_width=True):
                 st.switch_page("pages/Admin.py")
 else:
-    st.title("EthosBot: Simple Chat Assistant")
+    st.title("EthosBot: Ethical Teaching Assistant")
     
     st.info("""
     ### How it works:
