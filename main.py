@@ -8,7 +8,7 @@ import uuid
 load_dotenv()
 
 st.set_page_config(
-    page_title="EthosBot - Simple Chat Assistant",
+    page_title="EthosBot - Ethical Teaching Assistant",
     page_icon="🤖",
     layout="wide"
 )
