@@ -104,12 +104,11 @@ EthosBot/
 ├── .env                   # Environment variables (create this)
 ├── utils/
 │   ├── auth_setup.py      # Authentication system
-│   ├── api_client.py      # OpenAI and MongoDB client
-│   └── config.py          # Configuration settings
+│   ├── api_client.py      # OpenAI and MongoDB client  
 ├── pages/
-│   ├── 1_🔑_Login.py      # Login page
-│   ├── 2_👤_Signup.py     # Signup page
-│   └── 3_🔐_Admin.py      # Admin panel
+│   ├── Login.py      
+│   ├── Signup.py     
+│   └── Admin.py      
 └── db/
     └── auth.db            # SQLite database (fallback)
 ```
@@ -139,18 +138,8 @@ To create an admin user, you can either:
 - Environment variable protection for sensitive data
 - MongoDB connection security
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
 
 ## License
 
 This project is licensed under the MIT License.
 
-## Support
-
-For issues or questions, please create an issue in the repository.
