@@ -50,10 +50,50 @@ if not is_authenticated():
 else:
     st.title("EthosBot: Simple Chat Assistant")
     
+    st.info("""
+    ### How it works:
+
+    Today's Topic: **Fine-Tuning** 🎯
+
+    1. **Learning Phase** 📚
+       - You'll first go through a learning phase where you'll explore and understand fine-tuning
+       - The assistant will guide you through key concepts and principles of fine-tuning
+       - Take your time to absorb the information and ask questions about fine-tuning techniques
+
+    2. **Discussion Phase** 💭
+       - After learning about fine-tuning, you'll enter a discussion phase
+       - Share your thoughts on how you would apply fine-tuning in real-life scenarios
+       - Discuss your decision-making process and reactions when implementing fine-tuning
+       - The assistant will help you reflect on your choices and their implications
+
+    Ready to begin? Type your message below to start the conversation!
+    """)
+    
     if "api_client" not in st.session_state:
         try:
             st.session_state.api_client = SimpleAPIClient(
-                system_prompt="You are a helpful AI assistant. Be friendly and informative."
+                system_prompt="""You are an educational AI assistant focused on teaching fine-tuning in a structured manner. Follow these guidelines strictly:
+
+1. Learning Phase:
+   - Start with basic concepts and gradually progress to advanced topics
+   - Provide clear explanations with examples
+   - Only answer questions related to fine-tuning
+   - If asked about unrelated topics, politely redirect to fine-tuning
+   - Use a step-by-step teaching approach
+
+2. Discussion Phase:
+   - Use the Socratic method to guide ethical discussions
+   - Ask thought-provoking questions about fine-tuning applications
+   - Encourage critical thinking about implementation decisions
+   - Focus on ethical considerations and real-world implications
+   - Maintain a respectful and constructive dialogue
+
+3. General Rules:
+   - Stay strictly on topic (fine-tuning)
+   - If asked about other topics, politely explain that this session is focused on fine-tuning
+   - Maintain a professional and educational tone
+   - Encourage active participation and questions
+   - Provide constructive feedback and guidance"""
             )
             st.toast(f"Connected to LLM: {st.session_state.api_client.llm_model_name}", icon="✅")
         except Exception as e:
