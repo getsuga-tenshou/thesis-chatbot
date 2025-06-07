@@ -1,7 +1,4 @@
 # EthosBot
-
-EthosBot is an AI-powered conversational assistant that helps users learn and discuss ethical concepts through interactive dialogue. The application combines practical learning with ethical considerations, making it an educational tool for understanding complex moral and ethical topics.
-
 ## About
 
 This project was developed as part of a thesis research to investigate whether pedagogical conversational agents can effectively improve ethical reasoning among students. By combining AI technology with structured learning approaches, EthosBot aims to enhance students' ability to think critically about ethical dilemmas and develop stronger moral reasoning skills.
