@@ -43,10 +43,10 @@ if not is_authenticated():
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Sign Up", use_container_width=True):
-                st.switch_page("pages/2_👤_Signup.py")
+                st.switch_page("pages/Signup.py")
         with col2:
             if st.button("Admin Panel", use_container_width=True):
-                st.switch_page("pages/3_🔐_Admin.py")
+                st.switch_page("pages/Admin.py")
 else:
     st.title("EthosBot: Simple Chat Assistant")
     

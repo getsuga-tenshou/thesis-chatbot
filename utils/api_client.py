@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import numpy as np
+import random
 
 from dotenv import load_dotenv
 
@@ -53,39 +54,6 @@ class SimpleAPIClient:
         self.openai_client = OpenAI(api_key=self.openai_api_key)
         
         self.system_prompt = system_prompt or "You are a helpful AI assistant."
-        
-        # Create vector search index if it doesn't exist
-        self._ensure_vector_index()
-
-    def _ensure_vector_index(self):
-        """Create vector search index if it doesn't exist"""
-        try:
-            
-            indexes = list(self.collection.list_indexes())
-            vector_index_exists = any("vector" in idx.get("name", "") for idx in indexes)
-            
-            if not vector_index_exists:
-                
-                index_definition = {
-                    "mappings": {
-                        "dynamic": True,
-                        "fields": {
-                            "embedding": {
-                                "type": "knnVector",
-                                "dimensions": 1536,     
-                                "similarity": "cosine"
-                            }
-                        }
-                    }
-                }
-                self.db.command({
-                    "createSearchIndex": self.mongodb_collection_name,
-                    "definition": index_definition,
-                    "name": "vector_index"
-                })
-                logger.info(f"Created vector search index for collection {self.mongodb_collection_name}")
-        except Exception as e:
-            logger.error(f"Error creating vector index: {e}")
 
     def generate_embedding(self, text: str) -> List[float]:
         
@@ -137,9 +105,9 @@ class SimpleAPIClient:
     def get_current_topic(self, username: str, session_id: str) -> Dict:
         """Get the current topic for the user"""
         try:
+            # First check for any existing progress for this username
             progress = self.user_progress_collection.find_one({
-                "username": username,
-                "session_id": session_id
+                "username": username
             })
             
             if not progress:
@@ -161,6 +129,12 @@ class SimpleAPIClient:
                     })
                     return first_topic
             else:
+                # If progress exists but session_id is different, update it
+                if progress["session_id"] != session_id:
+                    self.user_progress_collection.update_one(
+                        {"username": username},
+                        {"$set": {"session_id": session_id}}
+                    )
                 current_topic = self.curriculum_collection.find_one({
                     "topic_id": progress["current_topic"]
                 })
@@ -182,8 +156,7 @@ class SimpleAPIClient:
         """Evaluate user's answer to the assessment question"""
         try:
             progress = self.user_progress_collection.find_one({
-                "username": username,
-                "session_id": session_id
+                "username": username
             })
             
             if not progress:
@@ -202,14 +175,14 @@ class SimpleAPIClient:
             # Update assessment status
             result = self.user_progress_collection.update_one(
                 {
-                    "username": username,
-                    "session_id": session_id
+                    "username": username
                 },
                 {
                     "$inc": {"assessment_status.attempts": 1},
                     "$set": {
                         "assessment_status.last_attempt": datetime.utcnow(),
-                        "assessment_status.passed": is_correct
+                        "assessment_status.passed": is_correct,
+                        "session_id": session_id
                     }
                 }
             )
@@ -224,8 +197,7 @@ class SimpleAPIClient:
                 if next_topic:
                     self.user_progress_collection.update_one(
                         {
-                            "username": username,
-                            "session_id": session_id
+                            "username": username
                         },
                         {
                             "$set": {
@@ -235,7 +207,8 @@ class SimpleAPIClient:
                                     "attempts": 0,
                                     "passed": False,
                                     "last_attempt": None
-                                }
+                                },
+                                "session_id": session_id
                             },
                             "$push": {"completed_topics": current_topic["topic_id"]}
                         }
@@ -244,11 +217,13 @@ class SimpleAPIClient:
                     # No more topics, mark learning phase as complete
                     self.user_progress_collection.update_one(
                         {
-                            "username": username,
-                            "session_id": session_id
+                            "username": username
                         },
                         {
-                            "$set": {"learning_phase_complete": True}
+                            "$set": {
+                                "learning_phase_complete": True,
+                                "session_id": session_id
+                            }
                         }
                     )
             
@@ -299,9 +274,9 @@ class SimpleAPIClient:
             key_concepts = [concept.strip().lower() for concept in response.choices[0].message.content.split(",")]
             user_answer_lower = user_answer.lower()
             
-            # Check if at least 70% of key concepts are present in user's answer
+            # Check if at least 50% of key concepts are present in user's answer
             matches = sum(1 for concept in key_concepts if concept in user_answer_lower)
-            return matches / len(key_concepts) >= 0.7
+            return matches / len(key_concepts) >= 0.5
             
         except Exception as e:
             logger.error(f"Error in fallback keyword check: {e}")
@@ -311,8 +286,7 @@ class SimpleAPIClient:
         """Check if user has completed the learning phase"""
         try:
             progress = self.user_progress_collection.find_one({
-                "username": username,
-                "session_id": session_id
+                "username": username
             })
             return progress.get("learning_phase_complete", False) if progress else False
         except Exception as e:
@@ -339,32 +313,118 @@ class SimpleAPIClient:
     def set_awaiting_assessment(self, username: str, session_id: str, value: bool):
         try:
             self.user_progress_collection.update_one(
-                {"username": username, "session_id": session_id},
-                {"$set": {"awaiting_assessment": value}}
+                {"username": username},
+                {
+                    "$set": {
+                        "awaiting_assessment": value,
+                        "session_id": session_id
+                    }
+                }
             )
         except Exception as e:
             logger.error(f"Error setting awaiting_assessment: {e}")
 
     def is_awaiting_assessment(self, username: str, session_id: str) -> bool:
         try:
-            progress = self.user_progress_collection.find_one({"username": username, "session_id": session_id})
+            progress = self.user_progress_collection.find_one({"username": username})
             return progress.get("awaiting_assessment", False) if progress else False
         except Exception as e:
             logger.error(f"Error checking awaiting_assessment: {e}")
             return False
+
+    def get_next_scenario(self, username: str, session_id: str) -> dict:
+        try:
+            progress = self.user_progress_collection.find_one({"username": username})
+            discussed = progress.get("discussed_scenarios", []) if progress else []
+            all_ids = [str(i) for i in range(1, 21)]
+            available_ids = [sid for sid in all_ids if sid not in discussed]
+            if not available_ids:
+                return None
+            # Ensure random selection is always an integer string
+            scenario_id = random.choice(available_ids)
+            if isinstance(scenario_id, float):
+                scenario_id = str(int(round(scenario_id)))
+            scenario = self.db["Scenarios"].find_one({"scenario_id": scenario_id})
+            if scenario:
+                self.user_progress_collection.update_one(
+                    {"username": username},
+                    {
+                        "$push": {"discussed_scenarios": scenario["scenario_id"]},
+                        "$set": {
+                            "current_scenario": scenario["scenario_id"],
+                            "session_id": session_id
+                        }
+                    }
+                )
+            return scenario
+        except Exception as e:
+            logger.error(f"Error getting next scenario: {e}")
+            return None
+
+    def get_current_scenario(self, username: str, session_id: str) -> dict:
+        try:
+            progress = self.user_progress_collection.find_one({"username": username})
+            scenario_id = progress.get("current_scenario") if progress else None
+            if scenario_id:
+                return self.db["Scenarios"].find_one({"scenario_id": scenario_id})
+            return self.get_next_scenario(username, session_id)
+        except Exception as e:
+            logger.error(f"Error getting current scenario: {e}")
+            return None
+
+    def find_similar_messages_by_embedding(self, query_embedding: list, username: str, limit: int = 5) -> list:
+        try:
+            pipeline = [
+                {
+                    "$vectorSearch": {
+                        "index": "vector_index",
+                        "path": "embedding",
+                        "queryVector": query_embedding,
+                        "numCandidates": 100,
+                        "limit": limit
+                    }
+                },
+                {
+                    "$match": {
+                        "username": username
+                    }
+                },
+                {
+                    "$project": {
+                        "role": 1,
+                        "content": 1,
+                        "timestamp": 1,
+                        "score": { "$meta": "vectorSearchScore" }
+                    }
+                }
+            ]
+            similar_messages = list(self.collection.aggregate(pipeline))
+            return similar_messages
+        except Exception as e:
+            logger.error(f"Error finding similar messages: {e}")
+            return []
+
+    def get_relevant_messages(self, query: str, username: str, limit: int = 3) -> list:
+        query_embedding = self.generate_embedding(query)
+        if not query_embedding:
+            return []
+        similar_messages = self.find_similar_messages_by_embedding(query_embedding, username, limit)
+        return [msg["content"] for msg in similar_messages]
 
     def generate_response(self, query: str, username: str, session_id: str, conversation_history: Optional[List[Dict]] = None) -> str:
         logger.info("Entered generate_response function.")
         if not query:
             logger.warning("Empty query received.")
             return "Query cannot be empty."
-        
         try:
-            # Check if we're in learning phase
+            relevant_msgs = self.get_relevant_messages(query, username, limit=10)
+            print(f"[RAG] Query: {query}")
+            print(f"[RAG] Relevant messages retrieved: {relevant_msgs}")
+            instruction = "You have access to relevant messages from the user's past. Use this information to answer questions, including those about the user's name, if the information is present."
+            # Learning phase
             if not self.is_learning_phase_complete(username, session_id):
                 current_topic = self.get_current_topic(username, session_id)
                 if current_topic:
-                    # Check if awaiting assessment answer
                     if self.is_awaiting_assessment(username, session_id):
                         evaluation = self.evaluate_assessment(username, session_id, query)
                         self.set_awaiting_assessment(username, session_id, False)
@@ -382,25 +442,25 @@ class SimpleAPIClient:
                         self.save_message_to_db(username, {"role": "user", "content": query}, session_id)
                         self.save_message_to_db(username, {"role": "assistant", "content": assistant_response}, session_id)
                         return assistant_response
-                    # This is a regular learning query
-                    system_prompt = f"""You are a teaching assistant helping the user learn about fine-tuning. 
-                    Current topic: {current_topic['topic_name']}
-                    Main points to cover: {', '.join(current_topic['content']['main_points'])}
-                    Examples to use: {', '.join(current_topic['content']['examples'])}
-                    
-                    Your role is to:
-                    1. Explain the current topic clearly and systematically
-                    2. Use the provided examples to illustrate concepts
-                    3. Answer any questions the user has about the topic
-                    4. When the user seems ready, ask them the assessment question: {current_topic['content']['assessment']['question']}
-                    
-                    Be friendly and encouraging in your explanations."""
-                    
+                    system_prompt = f"""{instruction}
+You are a teaching assistant helping the user learn about fine-tuning. 
+Current topic: {current_topic['topic_name']}
+Main points to cover: {', '.join(current_topic['content']['main_points'])}
+Examples to use: {', '.join(current_topic['content']['examples'])}
+
+Your role is to:
+1. Explain the current topic clearly and systematically
+2. Use the provided examples to illustrate concepts
+3. Answer any questions the user has about the topic
+4. When the user seems ready, ask them the assessment question: {current_topic['content']['assessment']['question']}
+
+Be friendly and encouraging in your explanations."""
+                    if relevant_msgs:
+                        system_prompt += "\n\nRelevant messages from the user in the past:\n" + "\n".join(f"- {msg}" for msg in relevant_msgs)
                     messages = [{"role": "system", "content": system_prompt}]
                     if conversation_history:
                         messages.extend(conversation_history[-5:])
                     messages.append({"role": "user", "content": query})
-                    
                     response = self.openai_client.chat.completions.create(
                         model=self.llm_model_name,
                         messages=messages,
@@ -408,98 +468,47 @@ class SimpleAPIClient:
                         max_tokens=2000
                     )
                     assistant_response = response.choices[0].message.content
-                    # If the bot asks the assessment question, set awaiting_assessment to True
                     assessment_question = current_topic['content']['assessment']['question'].strip().lower()
                     if assessment_question in assistant_response.strip().lower():
                         self.set_awaiting_assessment(username, session_id, True)
                     self.save_message_to_db(username, {"role": "user", "content": query}, session_id)
                     self.save_message_to_db(username, {"role": "assistant", "content": assistant_response}, session_id)
                     return assistant_response
-            # If learning phase is complete, proceed with normal response generation
-            logger.info("About to retrieve session summary.")
-            try:
-                if self.should_update_summary(session_id, username):
-                    logger.info("Summary needs to be updated.")
-                    summary = self.generate_chat_summary(session_id, username)
+            # Discussion phase
+            if self.is_learning_phase_complete(username, session_id):
+                scenario = self.get_current_scenario(username, session_id)
+                if not scenario:
+                    assistant_response = "There are no more scenarios to discuss. Feel free to ask any other questions!"
                 else:
-                    summary = self.get_session_summary(session_id, username)
-                    
-                logger.info(f"Summary retrieval complete. Summary: {summary[:100] if summary else 'None'}")
-            except Exception as e:
-                logger.error(f"Error retrieving summary: {e}", exc_info=True)
-                summary = None
+                    system_prompt = f"""{instruction}
+You are now a Socratic discussion partner. Engage the user in open-ended, thoughtful discussion about fine-tuning in real-world scenarios. Ask probing questions, encourage critical thinking, and help the user reason through different approaches. Use real-life examples and adapt your questions to the user's context.
 
-            system_prompt = self.system_prompt
-            if summary:
-                system_prompt += f"\n\nConversation summary so far:\n{summary}"
-            logger.info("System prompt prepared.")
+Current Scenario: {scenario['title']}
+Description: {scenario['description']}
+Tags: {', '.join(scenario['tags'])}
 
-            messages = [{"role": "system", "content": system_prompt}]
-            if conversation_history:
-                messages.extend(conversation_history[-10:])
-            messages.append({"role": "user", "content": query})
-
-            response = self.openai_client.chat.completions.create(
-                model=self.llm_model_name,
-                messages=messages,
-                temperature=0.7,
-                max_tokens=2000
-            )
-
-            response_content = response.choices[0].message.content
-
-            self.save_message_to_db(username, {
-                "role": "user",
-                "content": query
-            }, session_id)
-
-            self.save_message_to_db(username, {
-                "role": "assistant",
-                "content": response_content
-            }, session_id)
-
-            return response_content
-            
+Begin the discussion by asking the user an open-ended question about this scenario, and continue the conversation in a Socratic, exploratory manner."""
+                    if relevant_msgs:
+                        system_prompt += "\n\nRelevant messages from the user in the past:\n" + "\n".join(f"- {msg}" for msg in relevant_msgs)
+                    messages = [{"role": "system", "content": system_prompt}]
+                    if conversation_history:
+                        messages.extend(conversation_history[-10:])
+                    messages.append({"role": "user", "content": query})
+                    response = self.openai_client.chat.completions.create(
+                        model=self.llm_model_name,
+                        messages=messages,
+                        temperature=0.7,
+                        max_tokens=2000
+                    )
+                    assistant_response = response.choices[0].message.content
+                self.save_message_to_db(username, {"role": "user", "content": query}, session_id)
+                self.save_message_to_db(username, {"role": "assistant", "content": assistant_response}, session_id)
+                return assistant_response
+            # Fallback (should not be reached)
+            return "Something went wrong. Please try again."
         except Exception as e:
             logger.error(f"Error generating response: {e}", exc_info=True)
             return f"Apologies, an error occurred: {str(e)}"
-
-    def find_similar_messages_by_embedding(self, query_embedding: List[float], username: str, limit: int = 5) -> List[Dict]:
-        """
-        Find similar messages using an existing embedding
-        """
-        try:
-            pipeline = [
-                {
-                    "$search": {
-                        "index": "vector_index",
-                        "knnBeta": {
-                            "vector": query_embedding,
-                            "path": "embedding",
-                            "k": limit
-                        }
-                    }
-                },
-                {
-                    "$match": {
-                        "username": username
-                    }
-                },
-                {
-                    "$project": {
-                        "role": 1,
-                        "content": 1,
-                        "timestamp": 1,
-                        "score": { "$meta": "searchScore" }
-                    }
-                }
-            ]
-            
-            similar_messages = list(self.collection.aggregate(pipeline))
-            return similar_messages
-        except Exception as e:
-            logger.error(f"Error finding similar messages: {e}")
-            return []
 
     def generate_chat_summary(self, session_id: str, username: str, num_messages: int = 10) -> Optional[str]:
         logger.info(f"Entered generate_chat_summary with session_id: {session_id}, username: {username}")
