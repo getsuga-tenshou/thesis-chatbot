@@ -9,11 +9,11 @@ EthosBot uses advanced AI to engage users in meaningful conversations about ethi
 
 ## Key Features
 
-- Interactive chat interface
-- User authentication system
-- Persistent chat history
-- Ethical learning framework
-- Admin dashboard for user management
+- Interactive chat interface.
+- User authentication system.
+- Persistent chat history.
+- Ethical learning framework.
+- Admin dashboard for user management.
 
 ## Tech Stack
 
